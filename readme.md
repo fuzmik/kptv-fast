@@ -8,11 +8,12 @@ This application aggregates live TV channels from multiple streaming services in
 
 ## ✨ Features
 
-- **5 Streaming Providers**: Xumo, Tubi, Plex, Pluto TV, and Samsung TV Plus
+- **7 Streaming Providers**: Xumo, Tubi, Plex, Pluto TV, Samsung TV Plus, and GitHub-based IPTV repositories
 - **High Performance**: Concurrent channel fetching with ~15-20 second startup time
 - **Smart Caching**: 2-hour cache with background refresh to keep channels ready
 - **Duplicate Removal**: Automatically removes duplicate channels across providers
 - **Flexible Filtering**: Regex-based channel and group filtering
+- **Country Filtering**: Filter Git-based providers by country codes or names
 - **Multiple Formats**: M3U playlist, XMLTV EPG, and JSON channel data
 - **Debug Mode**: Comprehensive logging for troubleshooting
 - **Health Monitoring**: Built-in health checks and status endpoints
@@ -27,8 +28,10 @@ This application aggregates live TV channels from multiple streaming services in
 | **Samsung TV Plus** | ~420 | None | Good variety |
 | **Xumo** | ~85 | None | Optimized for speed |
 | **Tubi** | ~50+ | None | Anonymous access |
+| **Git IPTV (iptv-org)** | ~500-2000+ | None | Community-maintained, country-specific |
+| **Git Free TV** | ~100-500+ | None | Free TV channels, various countries |
 
-*Channel counts are approximate and vary by region
+*Channel counts are approximate and vary by region and filtering
 
 ## 🚀 Quick Start
 
@@ -47,6 +50,8 @@ services:
       - DEBUG=false
       - CACHE_DURATION=7200
       - WARM_CACHE_ON_STARTUP=true
+      - ENABLED_PROVIDERS=all
+      - GIT_COUNTRY=us,ca,uk  # Filter Git providers to these countries
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:7777/status"]
@@ -91,7 +96,7 @@ docker-compose up -d
 |----------|---------|-------------|
 | `CACHE_DURATION` | `7200` | Cache duration in seconds (2 hours) |
 | `MAX_WORKERS` | `5` | Concurrent provider fetching threads |
-| `PROVIDER_TIMEOUT` | `60` | Per-provider timeout in seconds |
+| `PROVIDER_TIMEOUT` | `45` | Per-provider timeout in seconds |
 
 #### Startup Optimization
 | Variable | Default | Description |
@@ -108,12 +113,46 @@ docker-compose up -d
 | `GROUP_INCLUDE` | `""` | Regex to include channels by group |
 | `GROUP_EXCLUDE` | `""` | Regex to exclude channels by group |
 
+#### Git Provider Settings
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GIT_COUNTRY` | `""` | Country filter for Git providers (comma-separated) |
+| `GITHUB_TOKEN` | `""` | GitHub API token for higher rate limits (optional) |
+
 #### Provider-Specific Settings
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PLUTO_REGION` | `us_west` | Pluto TV region (us_west, us_east, uk, ca, fr) |
 | `PLEX_REGION` | `local` | Plex region |
 | `SAMSUNG_REGION` | `us` | Samsung TV Plus region |
+
+### Git Provider Country Filtering
+
+The `GIT_COUNTRY` environment variable supports flexible country filtering:
+
+#### Supported Formats:
+- **2-letter codes**: `us,ca,uk,de,fr`
+- **3-letter codes**: `usa,can,gbr,deu,fra`
+- **Full names**: `united states,canada,united kingdom,germany,france`
+- **Mixed formats**: `us,canada,united kingdom,de`
+
+#### Examples:
+```yaml
+# North America only
+- GIT_COUNTRY=us,ca,mx
+
+# English-speaking countries
+- GIT_COUNTRY=us,uk,ca,au
+
+# Major European countries
+- GIT_COUNTRY=uk,de,fr,it,es,nl
+
+# All countries (no filter)
+- GIT_COUNTRY=
+
+# Single country
+- GIT_COUNTRY=united states
+```
 
 ### Example Configurations
 
@@ -134,6 +173,14 @@ environment:
   - STARTUP_CACHE_DELAY=5
 ```
 
+#### Git Providers Only (US/Canada)
+```yaml
+environment:
+  - ENABLED_PROVIDERS=git_iptv,git_freetv
+  - GIT_COUNTRY=us,ca
+  - CACHE_DURATION=3600
+```
+
 #### Filtered Setup (News Channels Only)
 ```yaml
 environment:
@@ -141,11 +188,40 @@ environment:
   - CACHE_DURATION=3600
 ```
 
-#### Specific Providers Only
+#### Traditional Providers Only
 ```yaml
 environment:
-  - ENABLED_PROVIDERS=pluto,plex,samsung
+  - ENABLED_PROVIDERS=pluto,plex,samsung,xumo,tubi
 ```
+
+## 🔧 Git Provider Details
+
+### iptv-org/iptv Repository
+- **Source**: https://github.com/iptv-org/iptv
+- **Content**: Community-maintained IPTV streams organized by country
+- **Channels**: 500-2000+ depending on country filter
+- **Quality**: Variable, community-curated
+- **Updates**: Regular community contributions
+
+### Free-TV/IPTV Repository
+- **Source**: https://github.com/Free-TV/IPTV
+- **Content**: Free TV channels organized by playlists
+- **Channels**: 100-500+ depending on country filter
+- **Quality**: Variable, community-maintained
+- **Updates**: Regular updates to playlists
+
+### Git Provider Benefits
+- **Large Channel Count**: Access to thousands of additional channels
+- **Country-Specific**: Filter to your preferred countries/regions
+- **Community-Maintained**: Continuously updated by the community
+- **No Authentication**: No sign-up or API keys required
+- **Flexible Filtering**: Support for multiple country formats
+
+### Git Provider Considerations
+- **Quality Varies**: Stream quality and reliability may vary
+- **Rate Limits**: GitHub API has rate limits (use GITHUB_TOKEN for higher limits)
+- **Network Dependent**: Requires internet access to GitHub
+- **Cache Important**: Enable caching to reduce API calls
 
 ## 🌐 API Endpoints
 
@@ -167,6 +243,7 @@ The status page (`/status`) provides:
 - Per-provider statistics
 - Cache status
 - Performance metrics
+- Git country filter status
 - Quick links to all endpoints
 
 ## 📊 Performance
@@ -178,13 +255,21 @@ The status page (`/status`) provides:
 - **Memory Usage**: ~200-300MB
 - **CPU Usage**: Low (mostly I/O bound)
 
+### Git Provider Performance
+- **GitHub API**: ~2-5 seconds per provider (cached for 1 hour)
+- **M3U Parsing**: ~1-3 seconds per file
+- **Country Filtering**: Minimal performance impact
+- **Concurrent Processing**: Up to 5 files processed simultaneously
+
 ### Optimization Tips
 
 1. **Enable Cache Warming**: Set `WARM_CACHE_ON_STARTUP=true`
 2. **Tune Worker Count**: Adjust `MAX_WORKERS` based on your server
 3. **Regional Optimization**: Use closer regions for better performance
 4. **Filter Channels**: Use regex filters to reduce channel count
-5. **Monitor Debug Logs**: Use `DEBUG=true` to identify slow providers
+5. **Country Filtering**: Use `GIT_COUNTRY` to limit Git provider scope
+6. **GitHub Token**: Set `GITHUB_TOKEN` for higher API rate limits
+7. **Monitor Debug Logs**: Use `DEBUG=true` to identify slow providers
 
 ## 🔧 Troubleshooting
 
@@ -211,6 +296,29 @@ docker-compose up -d
 
 # Check which provider is slow
 docker-compose logs -f kptv-fast
+```
+
+#### Git Provider Issues
+
+**GitHub Rate Limits**:
+```yaml
+environment:
+  - GITHUB_TOKEN=your_github_personal_access_token
+```
+
+**No Git Channels Found**:
+```yaml
+# Check country filter
+environment:
+  - GIT_COUNTRY=us,ca,uk  # Ensure countries exist in repos
+  - DEBUG=true           # Enable debug logs
+```
+
+**Git Provider Timeouts**:
+```yaml
+environment:
+  - PROVIDER_TIMEOUT=90  # Increase timeout for Git providers
+  - MAX_WORKERS=3        # Reduce concurrent Git requests
 ```
 
 #### Provider-Specific Issues
@@ -248,6 +356,7 @@ This provides:
 - Performance timings
 - Error stack traces
 - Provider-specific debug info
+- Git provider API calls and parsing details
 
 ### Health Checks
 
@@ -268,6 +377,7 @@ docker-compose ps
 - **Caching Layer**: Redis-like in-memory caching with TTL
 - **Background Tasks**: Cache warming and refresh threads
 - **Concurrent Processing**: ThreadPoolExecutor for parallel fetching
+- **Git Integration**: GitHub API integration with caching
 
 ### Provider Architecture
 Each provider implements:
@@ -275,6 +385,14 @@ Each provider implements:
 - `get_epg_data()`: Fetch EPG data (optional)
 - Built-in validation and normalization
 - Error handling and logging
+
+### Git Provider Architecture
+Git providers add:
+- GitHub API integration
+- M3U playlist parsing
+- Country-based filtering
+- Concurrent file processing
+- API response caching
 
 ## 🤝 Integration Examples
 
@@ -312,7 +430,15 @@ Production (DEBUG=false):
 2025-08-09 13:00:00 - INFO - 🚀 1794 channels ready in 15.2s
 
 Debug (DEBUG=true):
-2025-08-09 13:00:00 - providers.pluto - DEBUG - _get_session_token:45 - Got new session token
+2025-08-09 13:00:00 - providers.git_iptv - DEBUG - _fetch_github_directory:45 - Fetching GitHub directory
+```
+
+### Git Provider Logs
+```
+Git Provider Examples:
+2025-08-09 13:00:00 - INFO - Fetching Git IPTV channels with country filter: us,ca,uk
+2025-08-09 13:00:01 - INFO - Found 12 M3U files to process
+2025-08-09 13:00:05 - INFO - Successfully processed 1247 Git IPTV channels in 4.2s
 ```
 
 ## 🔒 Security
@@ -323,6 +449,7 @@ Debug (DEBUG=true):
 - Enable health checks
 - Monitor logs for unusual activity
 - Keep Docker images updated
+- Use GitHub tokens for API access
 
 ### Network Security
 ```yaml
@@ -336,6 +463,17 @@ labels:
   - "traefik.http.routers.streaming.rule=Host(`streaming.local`)"
 ```
 
+### GitHub Token Security
+```yaml
+# Use environment file for tokens
+env_file:
+  - .env  # Contains GITHUB_TOKEN=your_token_here
+
+# Or use Docker secrets (Swarm mode)
+secrets:
+  - github_token
+```
+
 ## 📈 Monitoring
 
 ### Prometheus Metrics (Future Enhancement)
@@ -344,6 +482,7 @@ The application is designed to support metrics collection:
 - Request response times
 - Cache hit/miss ratios
 - Provider success rates
+- GitHub API rate limit usage
 
 ### Log Aggregation
 For production deployments, consider:
@@ -363,7 +502,7 @@ cd kptv-fast
 pip install -r requirements.txt
 
 # Run locally
-DEBUG=true python app.py
+DEBUG=true GIT_COUNTRY=us,ca python app.py
 ```
 
 ### Adding New Providers
@@ -387,12 +526,21 @@ MIT License - see LICENSE file for details.
 - https://github.com/jgomez177 - Inspiration for Tubi, Plex, & Pluto implementations
 - https://github.com/BuddyChewChew - Inspiration for the Xumo implementation
 - https://github.com/matthuisman - Inspiration for the Samsung TVPlus implementation
+- https://github.com/iptv-org/iptv - Community IPTV repository
+- https://github.com/Free-TV/IPTV - Free TV IPTV repository
 - All the streaming services for providing free content
 - The open-source community for the excellent libraries used
 
 ## 📞 Support
 
 - **Issues**: [GitHub Issues](https://github.com/kpirnie/kptv-fast/issues)
+
+## 🔮 Roadmap
+
+### Planned Features
+- Additional Git repositories
+- Regional channel prioritization
+- Advanced filtering options
 
 ---
 

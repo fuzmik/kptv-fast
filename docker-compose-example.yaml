@@ -23,11 +23,15 @@ services:
       # Provider configuration: all or any of these: xumo,tubi,pluto,plex,samsung (accepts comma-delimited list)
       - ENABLED_PROVIDERS=all
       
-      # Regional settings
+      # Provider settings
       - PLUTO_REGION=us_east # 
       - PLEX_REGION=local # 
       - SAMSUNG_REGION=us # 
       
+      # Git provider country filtering (supports 2-letter codes, 3-letter codes, or full names - comma separated)
+      # Examples: us,ca,uk  or  usa,canada,united kingdom  or  us,canada,germany,franceL # No filter (all countries)
+      - GIT_COUNTRY=us,ca,uk     # Only include these countries from Git IPTV providers
+
       # Filtering (regex patterns)
       - CHANNEL_NAME_INCLUDE= # to include streams with the names in your regex
       - CHANNEL_NAME_EXCLUDE= # to exclude streams with the names in your regex

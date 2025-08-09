@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Unified Streaming Service Aggregator - Optimized for Speed
+Unified Streaming Service Aggregator - Optimized for Speed with Git IPTV Support
 """
 
 import os
@@ -60,6 +60,9 @@ class UnifiedStreamingAggregator:
         self.channel_name_exclude = os.getenv('CHANNEL_NAME_EXCLUDE', '')
         self.group_include = os.getenv('GROUP_INCLUDE', '')
         self.group_exclude = os.getenv('GROUP_EXCLUDE', '')
+        
+        # Git provider configuration
+        self.git_country = os.getenv('GIT_COUNTRY', '')
         
         # Initialize providers
         self._init_providers()
@@ -196,6 +199,14 @@ class UnifiedStreamingAggregator:
             logger.info("Successfully imported PlexProvider and SamsungProvider")
         except Exception as e:
             logger.error(f"Failed to import remaining providers: {e}")
+        
+        try:
+            from providers.git_providers import GitIptvProvider, GitFreetvProvider
+            available_providers['git_iptv'] = GitIptvProvider
+            available_providers['git_freetv'] = GitFreetvProvider
+            logger.info("Successfully imported GitIptvProvider and GitFreetvProvider")
+        except Exception as e:
+            logger.error(f"Failed to import git providers: {e}")
         
         # Initialize providers
         for name, provider_class in available_providers.items():
@@ -600,6 +611,7 @@ class UnifiedStreamingAggregator:
                 'total_channels': len(channels),
                 'provider_stats': provider_stats,
                 'enabled_providers': list(self.providers.keys()),
+                'git_country_filter': self.git_country,
                 'python_version': sys.version,
                 'recursion_limit': sys.getrecursionlimit(),
                 'hostname': socket.gethostname(),
@@ -639,6 +651,7 @@ class UnifiedStreamingAggregator:
                 <p>Initialized Providers: {', '.join(self.providers.keys())}</p>
                 <p>Cache Duration: {self.cache_duration} seconds</p>
                 <p>Max Workers: {self.max_workers}</p>
+                <p>Git Country Filter: {self.git_country or 'None'}</p>
                 <h3>Provider Statistics:</h3>
                 <ul>
             """
@@ -707,6 +720,8 @@ class UnifiedStreamingAggregator:
         logger.info(f"Starting KPTV FAST Streams on port {self.port}")
         logger.info(f"Enabled providers: {list(self.providers.keys())}")
         logger.info(f"Performance: {self.max_workers} workers, {self.provider_timeout}s timeout")
+        if self.git_country:
+            logger.info(f"Git country filter: {self.git_country}")
         
         try:
             server = WSGIServer(('0.0.0.0', self.port), self.app, log=None)
