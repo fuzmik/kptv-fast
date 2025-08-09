@@ -8,30 +8,29 @@ import re
 import json
 import gzip
 import time
-import logging
 import threading
 import traceback
 import sys
 import concurrent.futures
-from datetime import datetime, timezone, timedelta
 from flask import Flask, Response, request
 from gevent.pywsgi import WSGIServer # type: ignore
 from gevent import monkey # type: ignore
 import xml.etree.ElementTree as ET
+
+# Import logging configuration FIRST
+from utils.logging_config import setup_logging, get_logger
 
 monkey.patch_all()
 
 # Set recursion limit early to prevent issues
 sys.setrecursionlimit(2000)
 
-# Configure logging with more detail
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+# Setup logging globally
+DEBUG_MODE = setup_logging()
+logger = get_logger(__name__)
 
 class UnifiedStreamingAggregator:
+
     def __init__(self):
         self.app = Flask(__name__)
         self.providers = {}
@@ -52,6 +51,9 @@ class UnifiedStreamingAggregator:
         # Startup cache warming setting
         self.warm_cache_on_startup = os.getenv('WARM_CACHE_ON_STARTUP', 'true').lower() == 'true'
         self.startup_delay = int(os.getenv('STARTUP_CACHE_DELAY', 10))  # Wait 10 seconds before warming
+
+        # Debug mode
+        self.debug_mode = DEBUG_MODE
         
         # Filter configuration
         self.channel_name_include = os.getenv('CHANNEL_NAME_INCLUDE', '')
@@ -71,6 +73,7 @@ class UnifiedStreamingAggregator:
             self._start_startup_cache_warming()
 
     def _start_startup_cache_warming(self):
+
         """Start cache warming on startup with progress tracking"""
         def startup_cache_warmer():
             try:
@@ -207,10 +210,10 @@ class UnifiedStreamingAggregator:
     
     def _setup_routes(self):
         """Setup Flask routes"""
-        self.app.route('/playlist.m3u')(self.get_playlist)
-        self.app.route('/epg.xml')(self.get_epg_xml)
-        self.app.route('/epg.xml.gz')(self.get_epg_xml_gz)
-        self.app.route('/channels.json')(self.get_channels_json)
+        self.app.route('/playlist')(self.get_playlist)
+        self.app.route('/epg')(self.get_epg_xml)
+        self.app.route('/epggz')(self.get_epg_xml_gz)
+        self.app.route('/channels')(self.get_channels_json)
         self.app.route('/status')(self.get_status)
         self.app.route('/clear_cache')(self.clear_cache)
         self.app.route('/debug')(self.get_debug_info)
@@ -299,29 +302,54 @@ class UnifiedStreamingAggregator:
     def _fetch_provider_channels(self, provider_name, provider):
         """Fetch channels from a single provider with timeout"""
         try:
-            logger.info(f"Fetching channels from {provider_name}")
+            if self.debug_mode:
+                logger.debug(f"Fetching channels from {provider_name}")
             start_time = time.time()
             
-            # Use timeout for provider calls
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(provider.get_channels)
-                try:
-                    provider_channels = future.result(timeout=self.provider_timeout)
-                except concurrent.futures.TimeoutError:
-                    logger.warning(f"Timeout fetching channels from {provider_name}")
-                    return []
+            # Use a more robust timeout mechanism
+            import signal
+            
+            def timeout_handler(signum, frame):
+                raise TimeoutError(f"Provider {provider_name} timed out")
+            
+            provider_channels = []
+            
+            try:
+                # Set up timeout for the whole operation
+                if hasattr(signal, 'SIGALRM'):  # Unix systems
+                    signal.signal(signal.SIGALRM, timeout_handler)
+                    signal.alarm(self.provider_timeout)
+                
+                provider_channels = provider.get_channels()
+                
+                if hasattr(signal, 'SIGALRM'):
+                    signal.alarm(0)  # Cancel the alarm
+                    
+            except TimeoutError:
+                logger.warning(f"⏰ {provider_name} timed out after {self.provider_timeout}s")
+                return []
+            except Exception as e:
+                logger.error(f"❌ {provider_name} failed: {e}")
+                if self.debug_mode:
+                    logger.debug(traceback.format_exc())
+                return []
             
             elapsed = time.time() - start_time
             
             if provider_channels:
-                logger.info(f"Got {len(provider_channels)} channels from {provider_name} in {elapsed:.2f}s")
+                if self.debug_mode:
+                    logger.debug(f"✅ {provider_name}: {len(provider_channels)} channels in {elapsed:.1f}s")
+                else:
+                    logger.info(f"✅ {provider_name}: {len(provider_channels)} channels")
                 return provider_channels
             else:
-                logger.warning(f"No channels returned from {provider_name}")
+                logger.warning(f"⚠️  {provider_name}: No channels found in {elapsed:.1f}s")
                 return []
                 
         except Exception as e:
-            logger.error(f"Error fetching channels from {provider_name}: {e}")
+            logger.error(f"❌ Error fetching channels from {provider_name}: {e}")
+            if self.debug_mode:
+                logger.debug(traceback.format_exc())
             return []
     
     def _get_all_channels_concurrent(self):
@@ -622,10 +650,10 @@ class UnifiedStreamingAggregator:
                 </ul>
                 <h3>Endpoints:</h3>
                 <ul>
-                    <li><a href="/playlist.m3u">M3U Playlist</a></li>
-                    <li><a href="/epg.xml">EPG XML</a></li>
-                    <li><a href="/epg.xml.gz">EPG XML (Compressed)</a></li>
-                    <li><a href="/channels.json">Channels JSON</a></li>
+                    <li><a href="/playlist">M3U Playlist</a></li>
+                    <li><a href="/epg">EPG XML</a></li>
+                    <li><a href="/epggz">EPG XML (Compressed)</a></li>
+                    <li><a href="/channels">Channels JSON</a></li>
                     <li><a href="/debug">Debug Info (JSON)</a></li>
                     <li><a href="/refresh">Force Refresh</a></li>
                     <li><a href="/clear_cache">Clear Cache</a></li>

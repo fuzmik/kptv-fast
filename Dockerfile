@@ -67,6 +67,7 @@ WORKDIR /app
 # Copy application code with proper ownership
 COPY --chown=appuser:appuser app.py ./
 COPY --chown=appuser:appuser providers/ ./providers/
+COPY --chown=appuser:appuser utils/ ./utils/
 
 # Switch to non-root user
 USER appuser
