@@ -158,7 +158,7 @@ environment:
 ### Management Endpoints
 - **`GET /status`** - HTML status page with statistics
 - **`GET /debug`** - JSON debug information
-- **`GET /refresh`** - Force cache refresh
+- **`GET /refresh`** - Force cache refresh: set a cronjob to curl/wget this endpoint to setup a regular refresh
 - **`GET /clear_cache`** - Clear all cached data
 
 ### Status Page
@@ -393,7 +393,6 @@ MIT License - see LICENSE file for details.
 ## 📞 Support
 
 - **Issues**: [GitHub Issues](https://github.com/kpirnie/kptv-fast/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/kpirnie/kptv-fast/discussions)
 
 ---
 

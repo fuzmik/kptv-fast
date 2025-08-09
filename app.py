@@ -499,7 +499,7 @@ class UnifiedStreamingAggregator:
             
             # Create XML structure
             root = ET.Element('tv')
-            root.set('generator-info-name', 'Unified Streaming Aggregator')
+            root.set('generator-info-name', 'KPTV FAST Streams')
             
             # Add channel elements
             for channel in channels:
@@ -704,7 +704,7 @@ class UnifiedStreamingAggregator:
     
     def run(self):
         """Start the server"""
-        logger.info(f"Starting Unified Streaming Aggregator on port {self.port}")
+        logger.info(f"Starting KPTV FAST Streams on port {self.port}")
         logger.info(f"Enabled providers: {list(self.providers.keys())}")
         logger.info(f"Performance: {self.max_workers} workers, {self.provider_timeout}s timeout")
         
