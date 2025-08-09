@@ -1,4 +1,4 @@
-# Unified Streaming Aggregator
+# KPTV FAST Streams
 
 A high-performance streaming service aggregator that combines multiple free streaming platforms into a single M3U playlist and EPG. Perfect for use with Channels DVR, Plex, or any IPTV client.
 
@@ -40,7 +40,7 @@ version: '3.8'
 
 services:
   unified-streaming:
-    image: ghcr.io/your-username/unified-streaming-aggregator:latest
+    image: ghcr.io/kpirnie/kptv-fast:latest
     ports:
       - "7777:7777"
     environment:
@@ -62,14 +62,15 @@ docker-compose up -d
 
 3. **Access your content:**
    - Status page: `http://localhost:7777/status`
-   - M3U playlist: `http://localhost:7777/playlist.m3u`
-   - EPG: `http://localhost:7777/epg.xml`
+   - M3U playlist: `http://localhost:7777/playlist`
+   - EPG: `http://localhost:7777/epg`
+   - EPG GZ: `http://localhost:7777/epggz`
 
 ### Manual Build
 
 ```bash
-git clone https://github.com/your-username/unified-streaming-aggregator
-cd unified-streaming-aggregator
+git clone https://github.com/kpirnie/kptv-fast
+cd kptv-fast
 docker-compose build
 docker-compose up -d
 ```
@@ -149,10 +150,10 @@ environment:
 ## 🌐 API Endpoints
 
 ### Content Endpoints
-- **`GET /playlist.m3u`** - M3U8 playlist with all channels
-- **`GET /epg.xml`** - XMLTV EPG data
-- **`GET /epg.xml.gz`** - Compressed XMLTV EPG data
-- **`GET /channels.json`** - JSON formatted channel list
+- **`GET /playlist`** - M3U8 playlist with all channels
+- **`GET /epg`** - XMLTV EPG data
+- **`GET /epggz`** - Compressed XMLTV EPG data
+- **`GET /channels`** - JSON formatted channel list
 
 ### Management Endpoints
 - **`GET /status`** - HTML status page with statistics
@@ -195,7 +196,7 @@ The status page (`/status`) provides:
 curl http://localhost:7777/debug
 
 # Check logs
-docker-compose logs -f unified-streaming
+docker-compose logs -f kptv-fast
 
 # Force refresh
 curl http://localhost:7777/refresh
@@ -209,7 +210,7 @@ docker-compose down
 docker-compose up -d
 
 # Check which provider is slow
-docker-compose logs -f unified-streaming
+docker-compose logs -f kptv-fast
 ```
 
 #### Provider-Specific Issues
@@ -279,8 +280,8 @@ Each provider implements:
 
 ### Channels DVR
 1. Add source in Channels DVR
-2. Use M3U URL: `http://your-server:7777/playlist.m3u`
-3. Use EPG URL: `http://your-server:7777/epg.xml`
+2. Use M3U URL: `http://your-server:7777/playlist`
+3. Use EPG URL: `http://your-server:7777/epg`
 
 ### Plex
 1. Install the IPTV plugin
@@ -289,7 +290,7 @@ Each provider implements:
 
 ### VLC
 ```bash
-vlc http://your-server:7777/playlist.m3u
+vlc http://your-server:7777/playlist
 ```
 
 ### Kodi
@@ -355,8 +356,8 @@ For production deployments, consider:
 ### Local Development
 ```bash
 # Clone repository
-git clone https://github.com/your-username/unified-streaming-aggregator
-cd unified-streaming-aggregator
+git clone https://github.com/kpirnie/kptv-fast
+cd kptv-fast
 
 # Install dependencies
 pip install -r requirements.txt
@@ -383,15 +384,16 @@ MIT License - see LICENSE file for details.
 
 ## 🙏 Acknowledgments
 
-- [tubi-for-channels](https://github.com/jgomez177/tubi-for-channels) - Inspiration for Tubi implementation
+- https://github.com/jgomez177 - Inspiration for Tubi, Plex, & Pluto implementations
+- https://github.com/BuddyChewChew - Inspiration for the Xumo implementation
+- https://github.com/matthuisman - Inspiration for the Samsung TVPlus implementation
 - All the streaming services for providing free content
 - The open-source community for the excellent libraries used
 
 ## 📞 Support
 
-- **Issues**: [GitHub Issues](https://github.com/your-username/unified-streaming-aggregator/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/your-username/unified-streaming-aggregator/discussions)
-- **Documentation**: [Wiki](https://github.com/your-username/unified-streaming-aggregator/wiki)
+- **Issues**: [GitHub Issues](https://github.com/kpirnie/kptv-fast/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/kpirnie/kptv-fast/discussions)
 
 ---
 
