@@ -164,7 +164,7 @@ class XumoProvider(BaseProvider):
                     # Get stream URL via asset lookup
                     stream_url = self._get_stream_url(channel_id)
                     if not stream_url:
-                        self.logger.warning(f"No stream URL found for channel {channel_id}")
+                        # self.logger.warning(f"No stream URL found for channel {channel_id}")
                         continue
                     
                     channel = {

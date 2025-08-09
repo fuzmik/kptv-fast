@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-Unified Streaming Service Aggregator
-Combines Xumo, Tubi, Plex, Pluto, and Samsung TV Plus into one service
+Unified Streaming Service Aggregator - Optimized for Speed
 """
 
 import os
@@ -13,6 +12,7 @@ import logging
 import threading
 import traceback
 import sys
+import concurrent.futures
 from datetime import datetime, timezone, timedelta
 from flask import Flask, Response, request
 from gevent.pywsgi import WSGIServer # type: ignore
@@ -42,8 +42,16 @@ class UnifiedStreamingAggregator:
         
         # Configuration from environment variables
         self.port = int(os.getenv('PORT', 7777))
-        self.cache_duration = int(os.getenv('CACHE_DURATION', 3600))  # 1 hour default
+        self.cache_duration = int(os.getenv('CACHE_DURATION', 7200))  # 2 hours default (increased)
         self.enabled_providers = os.getenv('ENABLED_PROVIDERS', 'all').split(',')
+        
+        # Performance settings
+        self.max_workers = int(os.getenv('MAX_WORKERS', 5))  # Concurrent provider fetches
+        self.provider_timeout = int(os.getenv('PROVIDER_TIMEOUT', 45))  # Per-provider timeout
+        
+        # Startup cache warming setting
+        self.warm_cache_on_startup = os.getenv('WARM_CACHE_ON_STARTUP', 'true').lower() == 'true'
+        self.startup_delay = int(os.getenv('STARTUP_CACHE_DELAY', 10))  # Wait 10 seconds before warming
         
         # Filter configuration
         self.channel_name_include = os.getenv('CHANNEL_NAME_INCLUDE', '')
@@ -54,6 +62,102 @@ class UnifiedStreamingAggregator:
         # Initialize providers
         self._init_providers()
         self._setup_routes()
+        
+        # Start background cache warming
+        self._start_background_refresh()
+        
+        # Start startup cache warming
+        if self.warm_cache_on_startup:
+            self._start_startup_cache_warming()
+
+    def _start_startup_cache_warming(self):
+        """Start cache warming on startup with progress tracking"""
+        def startup_cache_warmer():
+            try:
+                # Wait for providers to be ready
+                logger.info("⏳ Waiting for providers to initialize...")
+                max_wait = 60
+                wait_time = 0
+                
+                while wait_time < max_wait and len(self.providers) == 0:
+                    time.sleep(2)
+                    wait_time += 2
+                    if wait_time % 10 == 0:  # Log every 10 seconds
+                        logger.info(f"Still waiting for providers... ({wait_time}s)")
+                
+                if len(self.providers) == 0:
+                    logger.warning("❌ No providers available for cache warming")
+                    return
+                
+                logger.info(f"✅ Found {len(self.providers)} providers: {', '.join(self.providers.keys())}")
+                
+                # Additional delay
+                if self.startup_delay > 0:
+                    logger.info(f"⏳ Waiting {self.startup_delay}s for full initialization...")
+                    time.sleep(self.startup_delay)
+                
+                logger.info("🔥 Starting startup cache warming...")
+                start_time = time.time()
+                
+                # Track progress per provider
+                def track_provider_progress(provider_name, provider):
+                    try:
+                        provider_start = time.time()
+                        channels = self._fetch_provider_channels(provider_name, provider)
+                        provider_elapsed = time.time() - provider_start
+                        if channels:
+                            logger.info(f"✅ {provider_name}: {len(channels)} channels in {provider_elapsed:.1f}s")
+                        else:
+                            logger.warning(f"⚠️  {provider_name}: No channels in {provider_elapsed:.1f}s")
+                        return channels
+                    except Exception as e:
+                        logger.error(f"❌ {provider_name}: Failed - {e}")
+                        return []
+                
+                # Warm cache with progress tracking
+                all_channels = []
+                channel_number = 1
+                
+                with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                    future_to_provider = {
+                        executor.submit(track_provider_progress, name, provider): name 
+                        for name, provider in self.providers.items()
+                    }
+                    
+                    for future in concurrent.futures.as_completed(future_to_provider):
+                        provider_name = future_to_provider[future]
+                        try:
+                            provider_channels = future.result()
+                            if provider_channels:
+                                for channel in provider_channels:
+                                    channel['provider'] = provider_name
+                                    channel['channel_number'] = channel.get('number', channel_number)
+                                    channel_number += 1
+                                all_channels.extend(provider_channels)
+                        except Exception as e:
+                            logger.error(f"Error processing {provider_name}: {e}")
+                
+                # Apply filters and cache
+                all_channels = self._apply_filters(all_channels)
+                all_channels = self._remove_duplicates(all_channels)
+                all_channels.sort(key=lambda x: x.get('channel_number', 999999))
+                
+                with self.cache_lock:
+                    self.channels_cache['all_channels'] = all_channels
+                    self.cache_expiry['all_channels'] = time.time() + self.cache_duration
+                
+                elapsed = time.time() - start_time
+                logger.info(f"🎉 Startup cache warming completed!")
+                logger.info(f"📺 {len(all_channels)} channels ready in {elapsed:.2f}s")
+                logger.info(f"🚀 First requests will now be instant!")
+                
+            except Exception as e:
+                logger.error(f"❌ Startup cache warming failed: {e}")
+                logger.debug(traceback.format_exc())
+        
+        startup_thread = threading.Thread(target=startup_cache_warmer, daemon=True)
+        startup_thread.start()
+        logger.info("🌟 Startup cache warming scheduled")
         
     def _init_providers(self):
         """Initialize all available providers with better error handling"""
@@ -110,6 +214,35 @@ class UnifiedStreamingAggregator:
         self.app.route('/status')(self.get_status)
         self.app.route('/clear_cache')(self.clear_cache)
         self.app.route('/debug')(self.get_debug_info)
+        self.app.route('/refresh')(self.force_refresh)
+    
+    def _start_background_refresh(self):
+        """Start background thread to keep cache warm"""
+        def background_refresher():
+            while True:
+                try:
+                    # Wait 5 minutes before first refresh
+                    time.sleep(300)
+                    
+                    # Check if cache is getting old (75% of cache duration)
+                    with self.cache_lock:
+                        cache_age = time.time() - self.cache_expiry.get('all_channels', 0)
+                        needs_refresh = cache_age > (self.cache_duration * 0.75)
+                    
+                    if needs_refresh:
+                        logger.info("Background refresh starting...")
+                        self._get_all_channels_concurrent()
+                        logger.info("Background refresh completed")
+                    
+                except Exception as e:
+                    logger.error(f"Background refresh error: {e}")
+                
+                # Check every 15 minutes
+                time.sleep(900)
+        
+        refresh_thread = threading.Thread(target=background_refresher, daemon=True)
+        refresh_thread.start()
+        logger.info("Background refresh thread started")
         
     def _is_cache_valid(self, cache_key):
         """Check if cache is still valid"""
@@ -118,6 +251,10 @@ class UnifiedStreamingAggregator:
     
     def _apply_filters(self, channels):
         """Apply regex filters to channels"""
+        if not any([self.channel_name_include, self.channel_name_exclude, 
+                   self.group_include, self.group_exclude]):
+            return channels  # No filters to apply
+            
         filtered_channels = []
         
         for channel in channels:
@@ -159,37 +296,73 @@ class UnifiedStreamingAggregator:
         logger.info(f"Removed {len(channels) - len(unique_channels)} duplicate channels")
         return unique_channels
     
-    def _get_all_channels(self):
-        """Get channels from all providers with individual error handling"""
+    def _fetch_provider_channels(self, provider_name, provider):
+        """Fetch channels from a single provider with timeout"""
+        try:
+            logger.info(f"Fetching channels from {provider_name}")
+            start_time = time.time()
+            
+            # Use timeout for provider calls
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(provider.get_channels)
+                try:
+                    provider_channels = future.result(timeout=self.provider_timeout)
+                except concurrent.futures.TimeoutError:
+                    logger.warning(f"Timeout fetching channels from {provider_name}")
+                    return []
+            
+            elapsed = time.time() - start_time
+            
+            if provider_channels:
+                logger.info(f"Got {len(provider_channels)} channels from {provider_name} in {elapsed:.2f}s")
+                return provider_channels
+            else:
+                logger.warning(f"No channels returned from {provider_name}")
+                return []
+                
+        except Exception as e:
+            logger.error(f"Error fetching channels from {provider_name}: {e}")
+            return []
+    
+    def _get_all_channels_concurrent(self):
+        """Get channels from all providers concurrently"""
         cache_key = 'all_channels'
         
         with self.cache_lock:
             if self._is_cache_valid(cache_key):
                 return self.channels_cache[cache_key]
         
+        logger.info("Starting concurrent channel fetch from all providers")
+        start_time = time.time()
+        
         all_channels = []
         channel_number = 1
         
-        for provider_name, provider in self.providers.items():
-            try:
-                logger.info(f"Fetching channels from {provider_name}")
-                provider_channels = provider.get_channels()
-                
-                if provider_channels:
-                    # Add provider info and assign channel numbers
-                    for channel in provider_channels:
-                        channel['provider'] = provider_name
-                        channel['channel_number'] = channel.get('number', channel_number)
-                        channel_number += 1
-                        
-                    all_channels.extend(provider_channels)
-                    logger.info(f"Got {len(provider_channels)} channels from {provider_name}")
-                else:
-                    logger.warning(f"No channels returned from {provider_name}")
+        # Use ThreadPoolExecutor to fetch from all providers concurrently
+        with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            # Submit all provider tasks
+            future_to_provider = {
+                executor.submit(self._fetch_provider_channels, name, provider): name 
+                for name, provider in self.providers.items()
+            }
+            
+            # Collect results as they complete
+            for future in concurrent.futures.as_completed(future_to_provider):
+                provider_name = future_to_provider[future]
+                try:
+                    provider_channels = future.result()
                     
-            except Exception as e:
-                logger.error(f"Error fetching channels from {provider_name}: {e}")
-                logger.debug(traceback.format_exc())
+                    if provider_channels:
+                        # Add provider info and assign channel numbers
+                        for channel in provider_channels:
+                            channel['provider'] = provider_name
+                            channel['channel_number'] = channel.get('number', channel_number)
+                            channel_number += 1
+                            
+                        all_channels.extend(provider_channels)
+                        
+                except Exception as e:
+                    logger.error(f"Error processing results from {provider_name}: {e}")
         
         # Apply filters and remove duplicates
         all_channels = self._apply_filters(all_channels)
@@ -203,11 +376,16 @@ class UnifiedStreamingAggregator:
             self.channels_cache[cache_key] = all_channels
             self.cache_expiry[cache_key] = time.time() + self.cache_duration
             
-        logger.info(f"Total channels after filtering and deduplication: {len(all_channels)}")
+        elapsed = time.time() - start_time
+        logger.info(f"Completed concurrent fetch: {len(all_channels)} channels in {elapsed:.2f}s")
         return all_channels
     
+    def _get_all_channels(self):
+        """Get channels using concurrent method"""
+        return self._get_all_channels_concurrent()
+    
     def _get_all_epg_data(self):
-        """Get EPG data from all providers"""
+        """Get EPG data from all providers concurrently"""
         cache_key = 'all_epg'
         
         with self.cache_lock:
@@ -216,17 +394,22 @@ class UnifiedStreamingAggregator:
         
         all_epg_data = {}
         
-        for provider_name, provider in self.providers.items():
-            try:
-                logger.info(f"Fetching EPG data from {provider_name}")
-                provider_epg = provider.get_epg_data()
-                
-                if provider_epg:
-                    all_epg_data.update(provider_epg)
-                    logger.info(f"Got EPG data for {len(provider_epg)} channels from {provider_name}")
-                    
-            except Exception as e:
-                logger.error(f"Error fetching EPG data from {provider_name}: {e}")
+        # Use concurrent execution for EPG fetching too
+        with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            future_to_provider = {
+                executor.submit(provider.get_epg_data): provider_name 
+                for provider_name, provider in self.providers.items()
+            }
+            
+            for future in concurrent.futures.as_completed(future_to_provider):
+                provider_name = future_to_provider[future]
+                try:
+                    provider_epg = future.result(timeout=self.provider_timeout)
+                    if provider_epg:
+                        all_epg_data.update(provider_epg)
+                        logger.info(f"Got EPG data for {len(provider_epg)} channels from {provider_name}")
+                except Exception as e:
+                    logger.error(f"Error fetching EPG data from {provider_name}: {e}")
         
         # Cache the results
         with self.cache_lock:
@@ -240,31 +423,33 @@ class UnifiedStreamingAggregator:
         try:
             channels = self._get_all_channels()
             
-            # Build M3U content
+            # Build M3U content more efficiently
             m3u_lines = ['#EXTM3U']
             
             for channel in channels:
-                # Build EXTINF line
-                extinf_parts = [f"#EXTINF:-1"]
+                # Build EXTINF line more efficiently
+                extinf_parts = ['#EXTINF:-1']
                 
-                # Add attributes
+                # Add attributes in batch
+                attrs = []
                 if channel.get('id'):
-                    extinf_parts.append(f'tvg-id="{channel["id"]}"')
+                    attrs.append(f'tvg-id="{channel["id"]}"')
                 if channel.get('name'):
-                    extinf_parts.append(f'tvg-name="{channel["name"]}"')
+                    attrs.append(f'tvg-name="{channel["name"]}"')
                 if channel.get('logo'):
-                    extinf_parts.append(f'tvg-logo="{channel["logo"]}"')
+                    attrs.append(f'tvg-logo="{channel["logo"]}"')
                 if channel.get('group'):
-                    extinf_parts.append(f'group-title="{channel["group"]}"')
+                    attrs.append(f'group-title="{channel["group"]}"')
                 if channel.get('channel_number'):
-                    extinf_parts.append(f'tvg-chno="{channel["channel_number"]}"')
+                    attrs.append(f'tvg-chno="{channel["channel_number"]}"')
                 if channel.get('provider'):
-                    extinf_parts.append(f'provider="{channel["provider"]}"')
+                    attrs.append(f'provider="{channel["provider"]}"')
+                
+                if attrs:
+                    extinf_parts.extend(attrs)
                     
                 extinf_line = ' '.join(extinf_parts) + f',{channel.get("name", "Unknown")}'
-                m3u_lines.append(extinf_line)
-                m3u_lines.append(channel.get('stream_url', ''))
-                m3u_lines.append('')  # Empty line between channels
+                m3u_lines.extend([extinf_line, channel.get('stream_url', ''), ''])
             
             m3u_content = '\n'.join(m3u_lines)
             
@@ -374,6 +559,15 @@ class UnifiedStreamingAggregator:
                 provider = channel.get('provider', 'unknown')
                 provider_stats[provider] = provider_stats.get(provider, 0) + 1
             
+            with self.cache_lock:
+                cache_info = {
+                    'channels_cached': 'all_channels' in self.channels_cache,
+                    'epg_cached': 'all_epg' in self.epg_cache,
+                    'channels_cache_expires': self.cache_expiry.get('all_channels', 0),
+                    'epg_cache_expires': self.cache_expiry.get('all_epg', 0),
+                    'current_time': time.time()
+                }
+            
             debug_info = {
                 'total_channels': len(channels),
                 'provider_stats': provider_stats,
@@ -381,9 +575,11 @@ class UnifiedStreamingAggregator:
                 'python_version': sys.version,
                 'recursion_limit': sys.getrecursionlimit(),
                 'hostname': socket.gethostname(),
-                'cache_status': {
-                    'channels_cached': 'all_channels' in self.channels_cache,
-                    'epg_cached': 'all_epg' in self.epg_cache,
+                'cache_status': cache_info,
+                'performance_settings': {
+                    'max_workers': self.max_workers,
+                    'provider_timeout': self.provider_timeout,
+                    'cache_duration': self.cache_duration
                 }
             }
             
@@ -407,12 +603,14 @@ class UnifiedStreamingAggregator:
             
             status_html = f"""
             <html>
-            <head><title>KPTV FAST</title><link rel="icon" type="image/png" href="https://cdn.kevp.us/tv/kptv-icon.png" /></head>
+            <head><title>KPTV FAST Streams</title><link rel="icon" type="image/png" href="https://cdn.kevp.us/tv/kptv-icon.png" /></head>
             <body>
-                <h1>KPTV FAST</h1>
+                <h1>KPTV FAST Streams</h1>
                 <h2>Status</h2>
                 <p>Total Channels: {len(channels)}</p>
                 <p>Initialized Providers: {', '.join(self.providers.keys())}</p>
+                <p>Cache Duration: {self.cache_duration} seconds</p>
+                <p>Max Workers: {self.max_workers}</p>
                 <h3>Provider Statistics:</h3>
                 <ul>
             """
@@ -429,6 +627,7 @@ class UnifiedStreamingAggregator:
                     <li><a href="/epg.xml.gz">EPG XML (Compressed)</a></li>
                     <li><a href="/channels.json">Channels JSON</a></li>
                     <li><a href="/debug">Debug Info (JSON)</a></li>
+                    <li><a href="/refresh">Force Refresh</a></li>
                     <li><a href="/clear_cache">Clear Cache</a></li>
                 </ul>
             </body>
@@ -453,10 +652,33 @@ class UnifiedStreamingAggregator:
             logger.error(f"Error clearing cache: {e}")
             return Response(f"Error clearing cache: {e}", status=500)
     
+    def force_refresh(self):
+        """Force refresh of all data"""
+        try:
+            # Clear cache first
+            with self.cache_lock:
+                self.channels_cache.clear()
+                self.epg_cache.clear()
+                self.cache_expiry.clear()
+            
+            # Force new fetch
+            start_time = time.time()
+            channels = self._get_all_channels()
+            elapsed = time.time() - start_time
+            
+            return Response(
+                f"Refresh completed in {elapsed:.2f}s. Found {len(channels)} channels.",
+                mimetype='text/plain'
+            )
+        except Exception as e:
+            logger.error(f"Error forcing refresh: {e}")
+            return Response(f"Error forcing refresh: {e}", status=500)
+    
     def run(self):
         """Start the server"""
         logger.info(f"Starting Unified Streaming Aggregator on port {self.port}")
         logger.info(f"Enabled providers: {list(self.providers.keys())}")
+        logger.info(f"Performance: {self.max_workers} workers, {self.provider_timeout}s timeout")
         
         try:
             server = WSGIServer(('0.0.0.0', self.port), self.app, log=None)
