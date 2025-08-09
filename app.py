@@ -11,21 +11,20 @@ import gzip
 import time
 import logging
 import threading
+import traceback
+import sys
 from datetime import datetime, timezone, timedelta
 from flask import Flask, Response, request
 from gevent.pywsgi import WSGIServer # type: ignore
 from gevent import monkey # type: ignore
 import xml.etree.ElementTree as ET
 
-# Import all provider classes
-from providers.xumo_provider import XumoProvider
-from providers.remaining_providers import PlexProvider, SamsungProvider
-from providers.tubi_provider import TubiProvider
-from providers.pluto_provider import PlutoProvider
-
 monkey.patch_all()
 
-# Configure logging
+# Set recursion limit early to prevent issues
+sys.setrecursionlimit(2000)
+
+# Configure logging with more detail
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -57,22 +56,50 @@ class UnifiedStreamingAggregator:
         self._setup_routes()
         
     def _init_providers(self):
-        """Initialize all available providers"""
-        available_providers = {
-            'xumo': XumoProvider,
-            'tubi': TubiProvider,
-            'plex': PlexProvider,
-            'pluto': PlutoProvider,
-            'samsung': SamsungProvider
-        }
+        """Initialize all available providers with better error handling"""
+        # Import providers individually to isolate issues
+        available_providers = {}
         
+        # Try to import each provider individually
+        try:
+            from providers.xumo_provider import XumoProvider
+            available_providers['xumo'] = XumoProvider
+            logger.info("Successfully imported XumoProvider")
+        except Exception as e:
+            logger.error(f"Failed to import XumoProvider: {e}")
+        
+        try:
+            from providers.tubi_provider import TubiProvider
+            available_providers['tubi'] = TubiProvider
+            logger.info("Successfully imported TubiProvider")
+        except Exception as e:
+            logger.error(f"Failed to import TubiProvider: {e}")
+        
+        try:
+            from providers.pluto_provider import PlutoProvider
+            available_providers['pluto'] = PlutoProvider
+            logger.info("Successfully imported PlutoProvider")
+        except Exception as e:
+            logger.error(f"Failed to import PlutoProvider: {e}")
+        
+        try:
+            from providers.remaining_providers import PlexProvider, SamsungProvider
+            available_providers['plex'] = PlexProvider
+            available_providers['samsung'] = SamsungProvider
+            logger.info("Successfully imported PlexProvider and SamsungProvider")
+        except Exception as e:
+            logger.error(f"Failed to import remaining providers: {e}")
+        
+        # Initialize providers
         for name, provider_class in available_providers.items():
             if self.enabled_providers == ['all'] or name in self.enabled_providers:
                 try:
+                    logger.info(f"Initializing {name} provider...")
                     self.providers[name] = provider_class()
-                    logger.info(f"Initialized {name} provider")
+                    logger.info(f"Successfully initialized {name} provider")
                 except Exception as e:
                     logger.error(f"Failed to initialize {name} provider: {e}")
+                    logger.debug(traceback.format_exc())
     
     def _setup_routes(self):
         """Setup Flask routes"""
@@ -82,6 +109,7 @@ class UnifiedStreamingAggregator:
         self.app.route('/channels.json')(self.get_channels_json)
         self.app.route('/status')(self.get_status)
         self.app.route('/clear_cache')(self.clear_cache)
+        self.app.route('/debug')(self.get_debug_info)
         
     def _is_cache_valid(self, cache_key):
         """Check if cache is still valid"""
@@ -132,7 +160,7 @@ class UnifiedStreamingAggregator:
         return unique_channels
     
     def _get_all_channels(self):
-        """Get channels from all providers"""
+        """Get channels from all providers with individual error handling"""
         cache_key = 'all_channels'
         
         with self.cache_lock:
@@ -161,6 +189,7 @@ class UnifiedStreamingAggregator:
                     
             except Exception as e:
                 logger.error(f"Error fetching channels from {provider_name}: {e}")
+                logger.debug(traceback.format_exc())
         
         # Apply filters and remove duplicates
         all_channels = self._apply_filters(all_channels)
@@ -333,53 +362,96 @@ class UnifiedStreamingAggregator:
             logger.error(f"Error generating channels JSON: {e}")
             return Response(f"Error generating channels JSON: {e}", status=500)
     
+    def get_debug_info(self):
+        """Return debug information"""
+        try:
+            import socket
+            
+            channels = self._get_all_channels()
+            provider_stats = {}
+            
+            for channel in channels:
+                provider = channel.get('provider', 'unknown')
+                provider_stats[provider] = provider_stats.get(provider, 0) + 1
+            
+            debug_info = {
+                'total_channels': len(channels),
+                'provider_stats': provider_stats,
+                'enabled_providers': list(self.providers.keys()),
+                'python_version': sys.version,
+                'recursion_limit': sys.getrecursionlimit(),
+                'hostname': socket.gethostname(),
+                'cache_status': {
+                    'channels_cached': 'all_channels' in self.channels_cache,
+                    'epg_cached': 'all_epg' in self.epg_cache,
+                }
+            }
+            
+            return Response(
+                json.dumps(debug_info, indent=2),
+                mimetype='application/json'
+            )
+        except Exception as e:
+            logger.error(f"Error generating debug info: {e}")
+            return Response(f"Error generating debug info: {e}", status=500)
+    
     def get_status(self):
         """Return status page"""
-        channels = self._get_all_channels()
-        provider_stats = {}
-        
-        for channel in channels:
-            provider = channel.get('provider', 'unknown')
-            provider_stats[provider] = provider_stats.get(provider, 0) + 1
-        
-        status_html = f"""
-        <html>
-        <head><title>Unified Streaming Aggregator Status</title></head>
-        <body>
-            <h1>Unified Streaming Aggregator</h1>
-            <h2>Status</h2>
-            <p>Total Channels: {len(channels)}</p>
-            <h3>Provider Statistics:</h3>
-            <ul>
-        """
-        
-        for provider, count in provider_stats.items():
-            status_html += f"<li>{provider}: {count} channels</li>"
-        
-        status_html += """
-            </ul>
-            <h3>Endpoints:</h3>
-            <ul>
-                <li><a href="/playlist.m3u">M3U Playlist</a></li>
-                <li><a href="/epg.xml">EPG XML</a></li>
-                <li><a href="/epg.xml.gz">EPG XML (Compressed)</a></li>
-                <li><a href="/channels.json">Channels JSON</a></li>
-                <li><a href="/clear_cache">Clear Cache</a></li>
-            </ul>
-        </body>
-        </html>
-        """
-        
-        return Response(status_html, mimetype='text/html')
+        try:
+            channels = self._get_all_channels()
+            provider_stats = {}
+            
+            for channel in channels:
+                provider = channel.get('provider', 'unknown')
+                provider_stats[provider] = provider_stats.get(provider, 0) + 1
+            
+            status_html = f"""
+            <html>
+            <head><title>KPTV FAST</title><link rel="icon" type="image/png" href="https://cdn.kevp.us/tv/kptv-icon.png" /></head>
+            <body>
+                <h1>KPTV FAST</h1>
+                <h2>Status</h2>
+                <p>Total Channels: {len(channels)}</p>
+                <p>Initialized Providers: {', '.join(self.providers.keys())}</p>
+                <h3>Provider Statistics:</h3>
+                <ul>
+            """
+            
+            for provider, count in provider_stats.items():
+                status_html += f"<li>{provider}: {count} channels</li>"
+            
+            status_html += """
+                </ul>
+                <h3>Endpoints:</h3>
+                <ul>
+                    <li><a href="/playlist.m3u">M3U Playlist</a></li>
+                    <li><a href="/epg.xml">EPG XML</a></li>
+                    <li><a href="/epg.xml.gz">EPG XML (Compressed)</a></li>
+                    <li><a href="/channels.json">Channels JSON</a></li>
+                    <li><a href="/debug">Debug Info (JSON)</a></li>
+                    <li><a href="/clear_cache">Clear Cache</a></li>
+                </ul>
+            </body>
+            </html>
+            """
+            
+            return Response(status_html, mimetype='text/html')
+        except Exception as e:
+            logger.error(f"Error generating status page: {e}")
+            return Response(f"Error generating status page: {e}", status=500)
     
     def clear_cache(self):
         """Clear all caches"""
-        with self.cache_lock:
-            self.channels_cache.clear()
-            self.epg_cache.clear()
-            self.cache_expiry.clear()
-            
-        return Response("Cache cleared successfully", mimetype='text/plain')
+        try:
+            with self.cache_lock:
+                self.channels_cache.clear()
+                self.epg_cache.clear()
+                self.cache_expiry.clear()
+                
+            return Response("Cache cleared successfully", mimetype='text/plain')
+        except Exception as e:
+            logger.error(f"Error clearing cache: {e}")
+            return Response(f"Error clearing cache: {e}", status=500)
     
     def run(self):
         """Start the server"""
@@ -394,5 +466,9 @@ class UnifiedStreamingAggregator:
             raise
 
 if __name__ == '__main__':
-    app = UnifiedStreamingAggregator()
-    app.run()
+    try:
+        app = UnifiedStreamingAggregator()
+        app.run()
+    except Exception as e:
+        logger.error(f"Failed to start application: {e}")
+        exit(1)

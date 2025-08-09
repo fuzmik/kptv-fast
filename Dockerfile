@@ -47,12 +47,14 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Install only runtime dependencies
+# Install only runtime dependencies and fix DNS issues
 RUN apk add --no-cache \
     libffi \
     openssl \
     ca-certificates \
-    tzdata && \
+    tzdata \
+    curl \
+    bind-tools && \
     # Create app user for security
     adduser -D -s /bin/sh -u 1000 appuser
 
