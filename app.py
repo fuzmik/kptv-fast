@@ -50,7 +50,8 @@ class UnifiedStreamingAggregator:
         
         # Startup cache warming setting
         self.warm_cache_on_startup = os.getenv('WARM_CACHE_ON_STARTUP', 'true').lower() == 'true'
-        self.startup_delay = int(os.getenv('STARTUP_CACHE_DELAY', 10))  # Wait 10 seconds before warming
+        self.warm_epg_on_startup = os.getenv('WARM_EPG_ON_STARTUP', 'true').lower() == 'true'  # Add this
+        self.startup_delay = int(os.getenv('STARTUP_CACHE_DELAY', 10))
 
         # Debug mode
         self.debug_mode = DEBUG_MODE
@@ -75,8 +76,8 @@ class UnifiedStreamingAggregator:
         if self.warm_cache_on_startup:
             self._start_startup_cache_warming()
 
-    def _start_startup_cache_warming(self):
 
+    def _start_startup_cache_warming(self):
         """Start cache warming on startup with progress tracking"""
         def startup_cache_warmer():
             try:
@@ -105,56 +106,27 @@ class UnifiedStreamingAggregator:
                 logger.info("🔥 Starting startup cache warming...")
                 start_time = time.time()
                 
-                # Track progress per provider
-                def track_provider_progress(provider_name, provider):
-                    try:
-                        provider_start = time.time()
-                        channels = self._fetch_provider_channels(provider_name, provider)
-                        provider_elapsed = time.time() - provider_start
-                        if channels:
-                            logger.info(f"✅ {provider_name}: {len(channels)} channels in {provider_elapsed:.1f}s")
-                        else:
-                            logger.warning(f"⚠️  {provider_name}: No channels in {provider_elapsed:.1f}s")
-                        return channels
-                    except Exception as e:
-                        logger.error(f"❌ {provider_name}: Failed - {e}")
-                        return []
+                # Warm channels cache first
+                logger.info("📺 Warming channels cache...")
+                channels_start_time = time.time()
+                all_channels = self._get_all_channels_concurrent()
+                channels_elapsed = time.time() - channels_start_time
+                logger.info(f"✅ Channels cache warmed: {len(all_channels)} channels in {channels_elapsed:.1f}s")
                 
-                # Warm cache with progress tracking
-                all_channels = []
-                channel_number = 1
+                # Warm EPG cache if enabled
+                all_epg_data = {}
+                if self.warm_epg_on_startup:
+                    logger.info("📡 Warming EPG cache...")
+                    epg_start_time = time.time()
+                    all_epg_data = self._get_all_epg_data()
+                    epg_elapsed = time.time() - epg_start_time
+                    logger.info(f"✅ EPG cache warmed: {len(all_epg_data)} channels with EPG in {epg_elapsed:.1f}s")
+                else:
+                    logger.info("⏭️ EPG cache warming disabled (WARM_EPG_ON_STARTUP=false)")
                 
-                with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-                    future_to_provider = {
-                        executor.submit(track_provider_progress, name, provider): name 
-                        for name, provider in self.providers.items()
-                    }
-                    
-                    for future in concurrent.futures.as_completed(future_to_provider):
-                        provider_name = future_to_provider[future]
-                        try:
-                            provider_channels = future.result()
-                            if provider_channels:
-                                for channel in provider_channels:
-                                    channel['provider'] = provider_name
-                                    channel['channel_number'] = channel.get('number', channel_number)
-                                    channel_number += 1
-                                all_channels.extend(provider_channels)
-                        except Exception as e:
-                            logger.error(f"Error processing {provider_name}: {e}")
-                
-                # Apply filters and cache
-                all_channels = self._apply_filters(all_channels)
-                all_channels = self._remove_duplicates(all_channels)
-                all_channels.sort(key=lambda x: x.get('channel_number', 999999))
-                
-                with self.cache_lock:
-                    self.channels_cache['all_channels'] = all_channels
-                    self.cache_expiry['all_channels'] = time.time() + self.cache_duration
-                
-                elapsed = time.time() - start_time
+                total_elapsed = time.time() - start_time
                 logger.info(f"🎉 Startup cache warming completed!")
-                logger.info(f"📺 {len(all_channels)} channels ready in {elapsed:.2f}s")
+                logger.info(f"📊 Total: {len(all_channels)} channels, {len(all_epg_data)} with EPG in {total_elapsed:.2f}s")
                 logger.info(f"🚀 First requests will now be instant!")
                 
             except Exception as e:
@@ -164,7 +136,7 @@ class UnifiedStreamingAggregator:
         startup_thread = threading.Thread(target=startup_cache_warmer, daemon=True)
         startup_thread.start()
         logger.info("🌟 Startup cache warming scheduled")
-        
+
     def _init_providers(self):
         """Initialize all available providers with better error handling"""
         # Import providers individually to isolate issues
@@ -193,12 +165,32 @@ class UnifiedStreamingAggregator:
             logger.error(f"Failed to import PlutoProvider: {e}")
         
         try:
-            from providers.remaining_providers import PlexProvider, SamsungProvider
+            from providers.plex_provider import PlexProvider
             available_providers['plex'] = PlexProvider
-            available_providers['samsung'] = SamsungProvider
-            logger.info("Successfully imported PlexProvider and SamsungProvider")
+            logger.info("Successfully imported PlexProvider")
         except Exception as e:
-            logger.error(f"Failed to import remaining providers: {e}")
+            logger.error(f"Failed to import PlexProvider: {e}")
+        
+        try:
+            from providers.samsung_provider import SamsungProvider
+            available_providers['samsung'] = SamsungProvider
+            logger.info("Successfully imported SamsungProvider")
+        except Exception as e:
+            logger.error(f"Failed to import SamsungProvider: {e}")
+
+        try:
+            from providers.distrotv_provider import DistroTVProvider
+            available_providers['distrotv'] = DistroTVProvider
+            logger.info("Successfully imported DistroTVProvider")
+        except Exception as e:
+            logger.error(f"Failed to import DistroTVProvider: {e}")
+
+        try:
+            from providers.lg_provider import LGProvider
+            available_providers['lg'] = LGProvider
+            logger.info("Successfully imported LGProvider")
+        except Exception as e:
+            logger.error(f"Failed to import LGProvider: {e}")
         
         try:
             from providers.git_providers import GitIptvProvider, GitFreetvProvider
@@ -217,8 +209,8 @@ class UnifiedStreamingAggregator:
                     logger.info(f"Successfully initialized {name} provider")
                 except Exception as e:
                     logger.error(f"Failed to initialize {name} provider: {e}")
-                    logger.debug(traceback.format_exc())
-    
+                    logger.debug(traceback.format_exc())        
+
     def _setup_routes(self):
         """Setup Flask routes"""
         self.app.route('/playlist')(self.get_playlist)
@@ -229,7 +221,7 @@ class UnifiedStreamingAggregator:
         self.app.route('/clear_cache')(self.clear_cache)
         self.app.route('/debug')(self.get_debug_info)
         self.app.route('/refresh')(self.force_refresh)
-    
+        
     def _start_background_refresh(self):
         """Start background thread to keep cache warm"""
         def background_refresher():
@@ -238,15 +230,29 @@ class UnifiedStreamingAggregator:
                     # Wait 5 minutes before first refresh
                     time.sleep(300)
                     
-                    # Check if cache is getting old (75% of cache duration)
+                    # Check if caches are getting old (75% of cache duration)
                     with self.cache_lock:
-                        cache_age = time.time() - self.cache_expiry.get('all_channels', 0)
-                        needs_refresh = cache_age > (self.cache_duration * 0.75)
+                        now = time.time()
+                        channels_age = now - (self.cache_expiry.get('all_channels', now) - self.cache_duration)
+                        epg_age = now - (self.cache_expiry.get('all_epg', now) - self.cache_duration)
+                        
+                        channels_needs_refresh = channels_age > (self.cache_duration * 0.75)
+                        epg_needs_refresh = epg_age > (self.cache_duration * 0.75)
                     
-                    if needs_refresh:
-                        logger.info("Background refresh starting...")
-                        self._get_all_channels_concurrent()
-                        logger.info("Background refresh completed")
+                    if channels_needs_refresh or epg_needs_refresh:
+                        logger.info("🔄 Background refresh starting...")
+                        start_time = time.time()
+                        
+                        if channels_needs_refresh:
+                            logger.info("📺 Refreshing channels cache...")
+                            self._get_all_channels_concurrent()
+                        
+                        if epg_needs_refresh:
+                            logger.info("📡 Refreshing EPG cache...")
+                            self._get_all_epg_data()
+                        
+                        elapsed = time.time() - start_time
+                        logger.info(f"✅ Background refresh completed in {elapsed:.1f}s")
                     
                 except Exception as e:
                     logger.error(f"Background refresh error: {e}")
@@ -256,7 +262,7 @@ class UnifiedStreamingAggregator:
         
         refresh_thread = threading.Thread(target=background_refresher, daemon=True)
         refresh_thread.start()
-        logger.info("Background refresh thread started")
+        logger.info("🔄 Background refresh thread started")
         
     def _is_cache_valid(self, cache_key):
         """Check if cache is still valid"""
@@ -704,17 +710,29 @@ class UnifiedStreamingAggregator:
             
             # Force new fetch
             start_time = time.time()
+            
+            logger.info("🔄 Force refreshing channels...")
             channels = self._get_all_channels()
-            elapsed = time.time() - start_time
+            channels_elapsed = time.time() - start_time
+            
+            logger.info("🔄 Force refreshing EPG...")
+            epg_start_time = time.time()
+            epg_data = self._get_all_epg_data()
+            epg_elapsed = time.time() - epg_start_time
+            
+            total_elapsed = time.time() - start_time
             
             return Response(
-                f"Refresh completed in {elapsed:.2f}s. Found {len(channels)} channels.",
+                f"Refresh completed in {total_elapsed:.2f}s. "
+                f"Found {len(channels)} channels and {len(epg_data)} channels with EPG. "
+                f"Channels: {channels_elapsed:.1f}s, EPG: {epg_elapsed:.1f}s",
                 mimetype='text/plain'
             )
         except Exception as e:
             logger.error(f"Error forcing refresh: {e}")
             return Response(f"Error forcing refresh: {e}", status=500)
-    
+
+        
     def run(self):
         """Start the server"""
         logger.info(f"Starting KPTV FAST Streams on port {self.port}")

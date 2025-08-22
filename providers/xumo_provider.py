@@ -324,14 +324,35 @@ class XumoProvider(BaseProvider):
             
         except Exception as e:
             self.logger.debug(f"Error getting stream URL via API for channel {channel_id}: {e}")
-            return ""
-    
-    def get_epg_data(self) -> Dict[str, List[Dict[str, Any]]]:
-        """Get EPG data for Xumo channels"""
-        self.logger.debug("EPG data fetching not implemented for Xumo provider in this version")
-        return {}
-    
+            return ""    
+
     def __del__(self):
+
         """Cleanup session"""
         if hasattr(self, 'session'):
             self.session.close()
+
+    def get_epg_data(self) -> Dict[str, List[Dict[str, Any]]]:
+        """Get EPG data for Xumo channels"""
+        try:
+            channels = self.get_channels()
+            if not channels:
+                return {}
+            
+            # Xumo's native EPG API is unreliable, go straight to fallback
+            self.logger.info("Using fallback EPG for Xumo (native API unreliable)")
+            
+            try:
+                from utils.epg_fallback import EPGFallbackManager
+                fallback_manager = EPGFallbackManager()
+                epg_data = fallback_manager.get_fallback_epg('xumo', channels)
+                if epg_data:
+                    self.logger.info(f"Retrieved fallback EPG for {len(epg_data)} Xumo channels")
+                return epg_data
+            except Exception as e:
+                self.logger.error(f"Fallback EPG failed for xumo: {e}")
+                return {}
+            
+        except Exception as e:
+            self.logger.error(f"Error fetching Xumo EPG data: {e}")
+            return {}
