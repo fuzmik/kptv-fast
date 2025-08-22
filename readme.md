@@ -8,12 +8,13 @@ This application aggregates live TV channels from multiple streaming services in
 
 ## ✨ Features
 
-- **7 Streaming Providers**: Xumo, Tubi, Plex, Pluto TV, Samsung TV Plus, and GitHub-based IPTV repositories
+- **9 Streaming Providers**: Xumo, Tubi, Plex, Pluto TV, Samsung TV Plus, DistroTV, LG Channels, and GitHub-based IPTV repositories
+- **Enhanced EPG System**: Automatic fallback to reliable external EPG sources when native implementations fail
 - **High Performance**: Concurrent channel fetching with ~15-20 second startup time
 - **Smart Caching**: 2-hour cache with background refresh to keep channels ready
 - **Duplicate Removal**: Automatically removes duplicate channels across providers
 - **Flexible Filtering**: Regex-based channel and group filtering
-- **Country Filtering**: Filter Git-based providers by country codes or names
+- **Country Filtering**: Filter Git-based and LG providers by country codes or names
 - **Multiple Formats**: M3U playlist, XMLTV EPG, and JSON channel data
 - **Debug Mode**: Comprehensive logging for troubleshooting
 - **Health Monitoring**: Built-in health checks and status endpoints
@@ -21,15 +22,17 @@ This application aggregates live TV channels from multiple streaming services in
 
 ## 📺 Supported Providers
 
-| Provider | Channels* | Authentication | Notes |
-|----------|-----------|----------------|-------|
-| **Pluto TV** | ~400 | None | Largest selection, reliable |
-| **Plex** | ~650 | None | High-quality channels |
-| **Samsung TV Plus** | ~420 | None | Good variety |
-| **Xumo** | ~85 | None | Optimized for speed |
-| **Tubi** | ~50+ | None | Anonymous access |
-| **Git IPTV (iptv-org)** | ~500-2000+ | None | Community-maintained, country-specific |
-| **Git Free TV** | ~100-500+ | None | Free TV channels, various countries |
+| Provider | Channels* | Authentication | EPG Source | Notes |
+|----------|-----------|----------------|------------|-------|
+| **Pluto TV** | ~400 | None | Native + Fallback | Largest selection, reliable |
+| **Plex** | ~650 | None | Native + Fallback | High-quality channels |
+| **Samsung TV Plus** | ~420 | None | Native + Fallback | Good variety |
+| **Xumo** | ~85 | None | Fallback Only | Optimized for speed |
+| **Tubi** | ~50+ | None | Native + Fallback | Anonymous access |
+| **DistroTV** | ~150+ | None | Fallback Only | Free multicultural content |
+| **LG Channels** | ~100-500+ | None | Fallback Only | Country-specific, multiple regions |
+| **Git IPTV (iptv-org)** | ~500-2000+ | None | None | Community-maintained, country-specific |
+| **Git Free TV** | ~100-500+ | None | None | Free TV channels, various countries |
 
 *Channel counts are approximate and vary by region and filtering
 
@@ -50,8 +53,10 @@ services:
       - DEBUG=false
       - CACHE_DURATION=7200
       - WARM_CACHE_ON_STARTUP=true
+      - WARM_EPG_ON_STARTUP=true
       - ENABLED_PROVIDERS=all
       - GIT_COUNTRY=us,ca,uk  # Filter Git providers to these countries
+      - LG_COUNTRY=us,ca,uk   # Filter LG provider to these countries
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:7777/status"]
@@ -102,8 +107,8 @@ docker-compose up -d
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `WARM_CACHE_ON_STARTUP` | `true` | Pre-load channels on startup |
+| `WARM_EPG_ON_STARTUP` | `true` | Pre-load EPG data on startup |
 | `STARTUP_CACHE_DELAY` | `10` | Delay before cache warming (seconds) |
-| `WARM_EPG_ON_STARTUP` | `false` | Also pre-load EPG data |
 
 #### Content Filtering
 | Variable | Default | Description |
@@ -113,12 +118,6 @@ docker-compose up -d
 | `GROUP_INCLUDE` | `""` | Regex to include channels by group |
 | `GROUP_EXCLUDE` | `""` | Regex to exclude channels by group |
 
-#### Git Provider Settings
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `GIT_COUNTRY` | `""` | Country filter for Git providers (comma-separated) |
-| `GITHUB_TOKEN` | `""` | GitHub API token for higher rate limits (optional) |
-
 #### Provider-Specific Settings
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -126,9 +125,20 @@ docker-compose up -d
 | `PLEX_REGION` | `local` | Plex region |
 | `SAMSUNG_REGION` | `us` | Samsung TV Plus region |
 
-### Git Provider Country Filtering
+#### Git Provider Settings
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GIT_COUNTRY` | `""` | Country filter for Git providers (comma-separated) |
+| `GITHUB_TOKEN` | `""` | GitHub API token for higher rate limits (optional) |
 
-The `GIT_COUNTRY` environment variable supports flexible country filtering:
+#### LG Provider Settings
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LG_COUNTRY` | `us` | Country filter for LG provider (comma-separated) |
+
+### Provider Country Filtering
+
+Both `GIT_COUNTRY` and `LG_COUNTRY` environment variables support flexible country filtering:
 
 #### Supported Formats:
 - **2-letter codes**: `us,ca,uk,de,fr`
@@ -140,18 +150,23 @@ The `GIT_COUNTRY` environment variable supports flexible country filtering:
 ```yaml
 # North America only
 - GIT_COUNTRY=us,ca,mx
+- LG_COUNTRY=us,ca,mx
 
 # English-speaking countries
 - GIT_COUNTRY=us,uk,ca,au
+- LG_COUNTRY=us,uk,ca,au
 
 # Major European countries
 - GIT_COUNTRY=uk,de,fr,it,es,nl
+- LG_COUNTRY=uk,de,fr,it,es,nl
 
 # All countries (no filter)
 - GIT_COUNTRY=
+- LG_COUNTRY=
 
 # Single country
 - GIT_COUNTRY=united states
+- LG_COUNTRY=us
 ```
 
 ### Example Configurations
@@ -170,15 +185,16 @@ environment:
   - MAX_WORKERS=8
   - PROVIDER_TIMEOUT=45
   - WARM_CACHE_ON_STARTUP=true
+  - WARM_EPG_ON_STARTUP=true
   - STARTUP_CACHE_DELAY=5
 ```
 
-#### Git Providers Only (US/Canada)
+#### Specific Providers Only
 ```yaml
 environment:
-  - ENABLED_PROVIDERS=git_iptv,git_freetv
-  - GIT_COUNTRY=us,ca
-  - CACHE_DURATION=3600
+  - ENABLED_PROVIDERS=pluto,plex,samsung,distrotv,lg
+  - GIT_COUNTRY=us,ca,uk
+  - LG_COUNTRY=us,ca,uk
 ```
 
 #### Filtered Setup (News Channels Only)
@@ -188,40 +204,32 @@ environment:
   - CACHE_DURATION=3600
 ```
 
-#### Traditional Providers Only
-```yaml
-environment:
-  - ENABLED_PROVIDERS=pluto,plex,samsung,xumo,tubi
-```
+## 📡 Enhanced EPG System
 
-## 🔧 Git Provider Details
+The application features an advanced EPG system with automatic fallback support:
 
-### iptv-org/iptv Repository
-- **Source**: https://github.com/iptv-org/iptv
-- **Content**: Community-maintained IPTV streams organized by country
-- **Channels**: 500-2000+ depending on country filter
-- **Quality**: Variable, community-curated
-- **Updates**: Regular community contributions
+### EPG Sources by Provider:
+- **Pluto TV**: Native API + i.mjh.nz fallback
+- **Plex**: Native API + i.mjh.nz fallback
+- **Samsung TV Plus**: Native API + i.mjh.nz fallback
+- **Tubi**: Native scraping + BuddyChewChew repository fallback
+- **Xumo**: BuddyChewChew repository fallback
+- **DistroTV**: EPGShare01 + vraomoturi repository fallback
+- **LG Channels**: EPGShare01 fallback
+- **Git Providers**: No EPG (playlist only)
 
-### Free-TV/IPTV Repository
-- **Source**: https://github.com/Free-TV/IPTV
-- **Content**: Free TV channels organized by playlists
-- **Channels**: 100-500+ depending on country filter
-- **Quality**: Variable, community-maintained
-- **Updates**: Regular updates to playlists
+### External EPG Sources:
+- **i.mjh.nz**: Comprehensive EPG for major providers
+- **EPGShare01**: Multi-provider EPG aggregation
+- **BuddyChewChew**: Specialized repositories for Tubi/Xumo
+- **vraomoturi**: DistroTV-specific EPG data
 
-### Git Provider Benefits
-- **Large Channel Count**: Access to thousands of additional channels
-- **Country-Specific**: Filter to your preferred countries/regions
-- **Community-Maintained**: Continuously updated by the community
-- **No Authentication**: No sign-up or API keys required
-- **Flexible Filtering**: Support for multiple country formats
-
-### Git Provider Considerations
-- **Quality Varies**: Stream quality and reliability may vary
-- **Rate Limits**: GitHub API has rate limits (use GITHUB_TOKEN for higher limits)
-- **Network Dependent**: Requires internet access to GitHub
-- **Cache Important**: Enable caching to reduce API calls
+### How It Works:
+1. **Native First**: Attempts to use each provider's native EPG API
+2. **Automatic Fallback**: If native fails, automatically uses external sources
+3. **Intelligent Mapping**: Maps external channel IDs to internal format
+4. **Caching**: Caches external EPG data to reduce requests
+5. **Error Recovery**: Graceful degradation when all sources fail
 
 ## 🌐 API Endpoints
 
@@ -239,11 +247,11 @@ environment:
 
 ### Status Page
 The status page (`/status`) provides:
-- Total channel count
-- Per-provider statistics
-- Cache status
-- Performance metrics
-- Git country filter status
+- Total channel count and EPG coverage
+- Per-provider statistics with EPG status
+- Cache status and performance metrics
+- Enhanced EPG system status
+- Git and LG country filter status
 - Quick links to all endpoints
 
 ## 📊 Performance
@@ -255,19 +263,19 @@ The status page (`/status`) provides:
 - **Memory Usage**: ~200-300MB
 - **CPU Usage**: Low (mostly I/O bound)
 
-### Git Provider Performance
-- **GitHub API**: ~2-5 seconds per provider (cached for 1 hour)
-- **M3U Parsing**: ~1-3 seconds per file
-- **Country Filtering**: Minimal performance impact
-- **Concurrent Processing**: Up to 5 files processed simultaneously
+### Enhanced EPG Performance
+- **External EPG Sources**: ~2-5 seconds per provider (cached for 1 hour)
+- **Native EPG APIs**: ~3-10 seconds per provider
+- **Fallback Activation**: Automatic, no performance penalty
+- **Channel ID Mapping**: Minimal performance impact
 
 ### Optimization Tips
 
-1. **Enable Cache Warming**: Set `WARM_CACHE_ON_STARTUP=true`
+1. **Enable Cache Warming**: Set `WARM_CACHE_ON_STARTUP=true` and `WARM_EPG_ON_STARTUP=true`
 2. **Tune Worker Count**: Adjust `MAX_WORKERS` based on your server
 3. **Regional Optimization**: Use closer regions for better performance
 4. **Filter Channels**: Use regex filters to reduce channel count
-5. **Country Filtering**: Use `GIT_COUNTRY` to limit Git provider scope
+5. **Country Filtering**: Use `GIT_COUNTRY` and `LG_COUNTRY` to limit scope
 6. **GitHub Token**: Set `GITHUB_TOKEN` for higher API rate limits
 7. **Monitor Debug Logs**: Use `DEBUG=true` to identify slow providers
 
@@ -287,6 +295,20 @@ docker-compose logs -f kptv-fast
 curl http://localhost:7777/refresh
 ```
 
+#### Poor EPG Coverage
+```bash
+# Check EPG status in debug endpoint
+curl http://localhost:7777/debug | jq '.epg_stats'
+
+# Check enhanced EPG system status
+curl http://localhost:7777/status
+# Look for "Enhanced EPG system: ✅ Active"
+
+# Force EPG refresh
+curl http://localhost:7777/clear_cache
+curl http://localhost:7777/refresh
+```
+
 #### Slow Performance
 ```bash
 # Enable debug logging
@@ -298,49 +320,27 @@ docker-compose up -d
 docker-compose logs -f kptv-fast
 ```
 
-#### Git Provider Issues
+#### Provider-Specific Issues
 
-**GitHub Rate Limits**:
+**DistroTV**: Scraping issues
 ```yaml
+# DistroTV uses web scraping, may be affected by site changes
+# Check logs for scraping errors
 environment:
-  - GITHUB_TOKEN=your_github_personal_access_token
+  - DEBUG=true  # Enable detailed scraping logs
 ```
 
-**No Git Channels Found**:
+**LG Channels**: Country filtering
 ```yaml
-# Check country filter
 environment:
-  - GIT_COUNTRY=us,ca,uk  # Ensure countries exist in repos
+  - LG_COUNTRY=us,ca,uk  # Ensure countries exist
   - DEBUG=true           # Enable debug logs
 ```
 
-**Git Provider Timeouts**:
+**Git Providers**: GitHub rate limits
 ```yaml
 environment:
-  - PROVIDER_TIMEOUT=90  # Increase timeout for Git providers
-  - MAX_WORKERS=3        # Reduce concurrent Git requests
-```
-
-#### Provider-Specific Issues
-
-**Pluto TV**: DNS resolution issues
-```yaml
-# Add to docker-compose.yml
-dns:
-  - 8.8.8.8
-  - 8.8.4.4
-```
-
-**Xumo**: Timeout issues
-```yaml
-environment:
-  - PROVIDER_TIMEOUT=90  # Increase timeout
-```
-
-**Tubi**: BeautifulSoup parsing issues
-```bash
-# Rebuild with updated requirements
-docker-compose build --no-cache
+  - GITHUB_TOKEN=your_github_personal_access_token
 ```
 
 ### Debug Mode
@@ -356,7 +356,8 @@ This provides:
 - Performance timings
 - Error stack traces
 - Provider-specific debug info
-- Git provider API calls and parsing details
+- EPG fallback system details
+- Web scraping debug information
 
 ### Health Checks
 
@@ -373,26 +374,30 @@ docker-compose ps
 
 ### Components
 - **Flask Web Server**: HTTP API and status endpoints
-- **Provider System**: Modular provider architecture
+- **Provider System**: Modular provider architecture with 9 providers
+- **Enhanced EPG System**: Native + fallback EPG with external source integration
 - **Caching Layer**: Redis-like in-memory caching with TTL
-- **Background Tasks**: Cache warming and refresh threads
+- **Background Tasks**: Cache warming and refresh threads for both channels and EPG
 - **Concurrent Processing**: ThreadPoolExecutor for parallel fetching
-- **Git Integration**: GitHub API integration with caching
+- **Web Scraping**: BeautifulSoup + regex fallback for DistroTV
+- **External Integration**: Multiple external M3U and EPG sources
 
 ### Provider Architecture
 Each provider implements:
 - `get_channels()`: Fetch channel list
-- `get_epg_data()`: Fetch EPG data (optional)
+- `get_epg_data()`: Fetch EPG data with automatic fallback
 - Built-in validation and normalization
 - Error handling and logging
+- Caching support
 
-### Git Provider Architecture
-Git providers add:
-- GitHub API integration
-- M3U playlist parsing
-- Country-based filtering
-- Concurrent file processing
-- API response caching
+### Enhanced EPG Architecture
+EPG system features:
+- Native provider EPG APIs
+- Automatic fallback to external sources
+- Channel ID mapping between formats
+- Compressed EPG file handling
+- Multi-source EPG aggregation
+- Error recovery and graceful degradation
 
 ## 🤝 Integration Examples
 
@@ -427,18 +432,20 @@ vlc http://your-server:7777/playlist
 ### Log Format
 ```
 Production (DEBUG=false):
-2025-08-09 13:00:00 - INFO - 🚀 1794 channels ready in 15.2s
+2025-08-22 13:00:00 - INFO - 🚀 1794 channels ready in 15.2s
+2025-08-22 13:00:00 - INFO - 📺 Total EPG data collected for 1247 channels
 
 Debug (DEBUG=true):
-2025-08-09 13:00:00 - providers.git_iptv - DEBUG - _fetch_github_directory:45 - Fetching GitHub directory
+2025-08-22 13:00:00 - providers.distrotv - DEBUG - Scraping with BeautifulSoup
+2025-08-22 13:00:00 - providers.lg - DEBUG - Fetching LG channels for us from https://www.apsattv.com/uslg.m3u
 ```
 
-### Git Provider Logs
+### Enhanced EPG Logs
 ```
-Git Provider Examples:
-2025-08-09 13:00:00 - INFO - Fetching Git IPTV channels with country filter: us,ca,uk
-2025-08-09 13:00:01 - INFO - Found 12 M3U files to process
-2025-08-09 13:00:05 - INFO - Successfully processed 1247 Git IPTV channels in 4.2s
+EPG System Examples:
+2025-08-22 13:00:00 - INFO - Native EPG successful for pluto: 387 channels
+2025-08-22 13:00:00 - INFO - Using fallback EPG for xumo: 79 channels  
+2025-08-22 13:00:00 - INFO - External EPG mapping for plex: 156/200 our channels matched
 ```
 
 ## 🔒 Security
@@ -463,26 +470,16 @@ labels:
   - "traefik.http.routers.streaming.rule=Host(`streaming.local`)"
 ```
 
-### GitHub Token Security
-```yaml
-# Use environment file for tokens
-env_file:
-  - .env  # Contains GITHUB_TOKEN=your_token_here
-
-# Or use Docker secrets (Swarm mode)
-secrets:
-  - github_token
-```
-
 ## 📈 Monitoring
 
 ### Prometheus Metrics (Future Enhancement)
 The application is designed to support metrics collection:
 - Channel count per provider
+- EPG coverage per provider
 - Request response times
 - Cache hit/miss ratios
 - Provider success rates
-- GitHub API rate limit usage
+- External EPG source reliability
 
 ### Log Aggregation
 For production deployments, consider:
@@ -502,14 +499,15 @@ cd kptv-fast
 pip install -r requirements.txt
 
 # Run locally
-DEBUG=true GIT_COUNTRY=us,ca python app.py
+DEBUG=true GIT_COUNTRY=us,ca LG_COUNTRY=us,ca python app.py
 ```
 
 ### Adding New Providers
 1. Create new provider class inheriting from `BaseProvider`
 2. Implement `get_channels()` and `get_epg_data()` methods
-3. Add to provider imports in `app.py`
-4. Test with debug mode enabled
+3. Add EPG fallback support in `utils/epg_fallback.py`
+4. Add to provider imports in `app.py`
+5. Test with debug mode enabled
 
 ### Contributing
 1. Fork the repository
@@ -524,10 +522,12 @@ MIT License - see LICENSE file for details.
 ## 🙏 Acknowledgments
 
 - https://github.com/jgomez177 - Inspiration for Tubi, Plex, & Pluto implementations
-- https://github.com/BuddyChewChew - Inspiration for the Xumo implementation
-- https://github.com/matthuisman - Inspiration for the Samsung TVPlus implementation
+- https://github.com/BuddyChewChew - Inspiration for the Xumo implementation and EPG sources
+- https://github.com/matthuisman - Inspiration for the Samsung TVPlus implementation and i.mjh.nz EPG sources
 - https://github.com/iptv-org/iptv - Community IPTV repository
 - https://github.com/Free-TV/IPTV - Free TV IPTV repository
+- https://epgshare01.online - EPG data aggregation
+- https://www.apsattv.com - External M3U sources for DistroTV and LG
 - All the streaming services for providing free content
 - The open-source community for the excellent libraries used
 
@@ -538,9 +538,8 @@ MIT License - see LICENSE file for details.
 ## 🔮 Roadmap
 
 ### Planned Features
-- Additional Git repositories
-- Regional channel prioritization
-- Advanced filtering options
+- Additional streaming providers
+- Enhanced EPG source redundancy
 
 ---
 
