@@ -518,13 +518,22 @@ class UnifiedStreamingAggregator:
             root = ET.Element('tv')
             root.set('generator-info-name', 'KPTV FAST Streams')
             
+            # Sort channels by name for EPG
+            sorted_channels = sorted(channels, key=lambda x: x.get('name', '').lower())
+
             # Add channel elements
-            for channel in channels:
+            for channel in sorted_channels:
                 channel_elem = ET.SubElement(root, 'channel')
                 channel_elem.set('id', str(channel.get('id', '')))
                 
                 display_name = ET.SubElement(channel_elem, 'display-name')
-                display_name.text = channel.get('name', '')
+                # Format: "Channel Name - Provider"
+                channel_name = channel.get('name', '')
+                provider_name = channel.get('provider', '').title()
+                if provider_name:
+                    display_name.text = f"{channel_name} - {provider_name}"
+                else:
+                    display_name.text = channel_name
                 
                 if channel.get('logo'):
                     icon = ET.SubElement(channel_elem, 'icon')
