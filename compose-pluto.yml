@@ -1,0 +1,55 @@
+networks:
+  cosmos-kptv-default:
+    external: true
+    name: "cosmos-kptv-default"
+  cosmos-kptv-internal:
+    external: true
+    name: "cosmos-kptv-internal"
+
+services:
+  pluto:
+
+    command:
+      - "python3"
+      - "app.py"
+
+    container_name: "pluto"
+
+    environment:
+      - "ENABLED_PROVIDERS=pluto"
+      - "CACHE_DURATION=7200"
+      - "PLUTO_REGION=us_west"
+      - "MAX_WORKERS=5"
+      - "DEBUG=false"
+      - "WARM_CACHE_ON_STARTUP=true"
+      - "WARM_EPG_ON_STARTUP=true"
+      - "STARTUP_CACHE_DELAY=10"
+      - "PROVIDER_TIMEOUT=45"
+
+    hostname: "pluto"
+
+    image: "ghcr.io/kpirnie/kptv-fast:latest"
+
+    labels:
+      cosmos-force-network-mode: "cosmos-kptv-default" # test out if to use cosmos-kptv-internal or cosmos-kptv-default
+#      cosmos-stack-main: "" # true or false
+#      cosmos-stack: "" # name of the service
+
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+
+    networks:
+      - "cosmos-kptv-default"
+      - "cosmos-kptv-internal"
+
+    ports:
+      - ":7777/tcp"
+
+    restart: "unless-stopped"
+
+    user: "appuser"
+
+    working_dir: "/app"
