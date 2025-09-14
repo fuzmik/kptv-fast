@@ -2,98 +2,181 @@ networks:
   cosmos-kptv-default:
     external: true
     name: "cosmos-kptv-default"
-  cosmos-kptv-internal:
-    external: true
-    name: "cosmos-kptv-internal"
 
 services:
   kptv:
-
     command:
       - "python3"
       - "app.py"
-
     container_name: "plex"
-
     environment:
       - "ENABLED_PROVIDERS=plex"
       - "PLEX_REGION=local"
       - "CACHE_DURATION=7200"
-      - "MAX_WORKERS=5"
+      - "MAX_WORKERS=1"
       - "WARM_CACHE_ON_STARTUP=true"
       - "WARM_EPG_ON_STARTUP=true"
       - "STARTUP_CACHE_DELAY=10"
       - "PROVIDER_TIMEOUT=45"
-
     hostname: "plex"
-
     image: "ghcr.io/kpirnie/kptv-fast:latest"
-
     labels:
-      cosmos-force-network-mode: "cosmos-kptv-internal" # test out if to use cosmos-kptv-internal or cosmos-kptv-default
+      cosmos-force-network-mode: "cosmos-kptv-default" # test out if to use cosmos-kptv-internal or cosmos-kptv-default
       cosmos-stack-main: "true" # true or false
       cosmos-stack: "kptv-fast" # name of the service
-
+      cosmos-icon: "https://thumbs.dreamstime.com/b/tv-box-iptv-icon-vector-illustration-92221164.jpg"
     logging:
       driver: "json-file"
       options:
         max-file: "3"
         max-size: "10m"
-
     networks:
       - "cosmos-kptv-default"
-      - "cosmos-kptv-internal"
 
     ports:
       - ":7777/tcp"
-
     restart: "unless-stopped"
-
     user: "appuser"
 
   pluto:
-
     command:
       - "python3"
       - "app.py"
-
     container_name: "pluto"
-
     environment:
       - "ENABLED_PROVIDERS=pluto"
       - "CACHE_DURATION=7200"
       - "PLUTO_REGION=us_west"
-      - "MAX_WORKERS=5"
+      - "MAX_WORKERS=1"
       - "DEBUG=false"
       - "WARM_CACHE_ON_STARTUP=true"
       - "WARM_EPG_ON_STARTUP=true"
       - "STARTUP_CACHE_DELAY=10"
       - "PROVIDER_TIMEOUT=45"
-
     hostname: "pluto"
-
     image: "ghcr.io/kpirnie/kptv-fast:latest"
-
     labels:
-      cosmos-force-network-mode: "cosmos-kptv-internal" # test out if to use cosmos-kptv-internal or cosmos-kptv-default
+      cosmos-force-network-mode: "cosmos-kptv-default" # test out if to use cosmos-kptv-internal or cosmos-kptv-default
 #      cosmos-stack-main: "" # true or false
       cosmos-stack: "kptv-fast" # name of the service
-
+      cosmos-icon: "https://thumbs.dreamstime.com/b/tv-box-iptv-icon-vector-illustration-92221164.jpg"
     logging:
       driver: "json-file"
       options:
         max-file: "3"
         max-size: "10m"
-
     networks:
       - "cosmos-kptv-default"
-      - "cosmos-kptv-internal"
 
     ports:
       - ":7777/tcp"
-
     restart: "unless-stopped"
+    user: "appuser"
+    working_dir: "/app"
 
+  distrotv:  # change the name
+    command:
+      - "python3"
+      - "app.py"
+    container_name: "distrotv"  # change the name
+# choose one provider to separate
+    environment:
+      - "ENABLED_PROVIDERS=distrotv"
+      - "CACHE_DURATION=7200"
+      - "MAX_WORKERS=1"
+      - "DEBUG=false"
+      - "WARM_CACHE_ON_STARTUP=true"
+      - "WARM_EPG_ON_STARTUP=true"
+      - "STARTUP_CACHE_DELAY=10"
+      - "PROVIDER_TIMEOUT=45"
+    hostname: "distrotv"  # change it to provider
+    image: "ghcr.io/kpirnie/kptv-fast:latest"
+    labels:
+      cosmos-force-network-mode: "cosmos-kptv-default" # test out if to use cosmos-kptv-internal or cosmos-kptv-default
+#      cosmos-stack-main: "" # true or false
+      cosmos-stack: "kptv-fast" # name of the service
+      cosmos-icon: "https://thumbs.dreamstime.com/b/tv-box-iptv-icon-vector-illustration-92221164.jpg"
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+    networks:
+      - "cosmos-kptv-default"
+
+    ports:
+      - ":7777/tcp"
+    restart: "unless-stopped"
     user: "appuser"
 
-    working_dir: "/app"
+  lg_us:  # change the name
+    command:
+      - "python3"
+      - "app.py"
+    container_name: "lg_us"  # change the name
+# choose one provider to separate
+    environment:
+      - "ENABLED_PROVIDERS=lg"
+      - "CACHE_DURATION=7200"
+      - "MAX_WORKERS=1"
+      - "DEBUG=false"
+      - "WARM_CACHE_ON_STARTUP=true"
+      - "WARM_EPG_ON_STARTUP=true"
+      - "STARTUP_CACHE_DELAY=10"
+      - "LG_COUNTRY=us"
+      - "PROVIDER_TIMEOUT=45"
+    hostname: "lg"  # change it to provider
+    image: "ghcr.io/kpirnie/kptv-fast:latest"
+    labels:
+      cosmos-force-network-mode: "cosmos-kptv-default" # test out if to use cosmos-kptv-internal or cosmos-kptv-default
+#      cosmos-stack-main: "" # true or false
+      cosmos-stack: "kptv-fast" # name of the service
+      cosmos-icon: "https://thumbs.dreamstime.com/b/tv-box-iptv-icon-vector-illustration-92221164.jpg"
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+    networks:
+      - "cosmos-kptv-default"
+
+    ports:
+      - ":7777/tcp"
+    restart: "unless-stopped"
+    user: "appuser"
+
+  smg:  # change the name
+    command:
+      - "python3"
+      - "app.py"
+    container_name: "smg"  # change the name
+# choose one provider to separate
+    environment:
+      - "ENABLED_PROVIDERS=samsung"
+      - "CACHE_DURATION=7200"
+      - "MAX_WORKERS=1"
+      - "DEBUG=false"
+      - "WARM_CACHE_ON_STARTUP=true"
+      - "WARM_EPG_ON_STARTUP=true"
+      - "STARTUP_CACHE_DELAY=10"
+      - "SAMSUNG_REGION=us"
+      - "PROVIDER_TIMEOUT=45"
+    hostname: "smg"  # change it to provider
+    image: "ghcr.io/kpirnie/kptv-fast:latest"
+    labels:
+      cosmos-force-network-mode: "cosmos-kptv-default" # test out if to use cosmos-kptv-internal or cosmos-kptv-default
+#      cosmos-stack-main: "" # true or false
+      cosmos-stack: "kptv-fast" # name of the service
+      cosmos-icon: "https://thumbs.dreamstime.com/b/tv-box-iptv-icon-vector-illustration-92221164.jpg"
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+    networks:
+      - "cosmos-kptv-default"
+
+    ports:
+      - ":7777/tcp"
+    restart: "unless-stopped"
+    user: "appuser"
