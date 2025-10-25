@@ -26,7 +26,7 @@ class EPGFallbackManager:
         self.fallback_sources = {
             'epgshare01': {
                 'plex': 'https://epgshare01.online/epgshare01/epg_ripper_PLEX1.xml.gz',
-                'lg': 'https://epgshare01.online/epgshare01/epg_ripper_US1.xml.gz',
+                'lg': 'https://epgshare01.online/epgshare01/epg_ripper_US2.xml.gz',
                 'distrotv': 'https://epgshare01.online/epgshare01/epg_ripper_DISTROTV1.xml.gz',
             },
             'mjh': {
