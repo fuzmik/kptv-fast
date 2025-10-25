@@ -12,7 +12,7 @@ import threading
 import traceback
 import sys
 import concurrent.futures
-from flask import Flask, Response, request
+from flask import Flask, Response, request, redirect
 from gevent.pywsgi import WSGIServer # type: ignore
 from gevent import monkey # type: ignore
 import xml.etree.ElementTree as ET
@@ -220,7 +220,7 @@ class UnifiedStreamingAggregator:
         self.app.route('/status')(self.get_status)
         self.app.route('/clear_cache')(self.clear_cache)
         self.app.route('/debug')(self.get_debug_info)
-        self.app.route('/refresh')(self.force_refresh)
+        self.app.route('/')(redirect('/status'))
         
     def _start_background_refresh(self):
         """Start background thread to keep cache warm"""
