@@ -220,7 +220,9 @@ class UnifiedStreamingAggregator:
         self.app.route('/status')(self.get_status)
         self.app.route('/clear_cache')(self.clear_cache)
         self.app.route('/debug')(self.get_debug_info)
-        self.app.route('/')(redirect('/status'))
+        @self.app.route('/')
+        def index_redirect():
+            return redirect('/status')
         
     def _start_background_refresh(self):
         """Start background thread to keep cache warm"""
