@@ -19,7 +19,7 @@ services:
       - "STARTUP_CACHE_DELAY=10"
       - "PROVIDER_TIMEOUT=45"
     hostname: "plex"
-    image: "ghcr.io/kpirnie/kptv-fast:latest"
+    image: "reg.inme.kozow.com/frank/kptv-fast:latest-dev"
     labels:
       cosmos-force-network-mode: "cosmos-kptv-default" # test out if to use cosmos-kptv-internal or cosmos-kptv-default
       cosmos-stack-main: "true" # true or false
@@ -54,7 +54,7 @@ services:
       - "STARTUP_CACHE_DELAY=10"
       - "PROVIDER_TIMEOUT=45"
     hostname: "pluto"
-    image: "ghcr.io/kpirnie/kptv-fast:latest"
+    image: "reg.inme.kozow.com/frank/kptv-fast:latest-dev"
     labels:
       cosmos-force-network-mode: "cosmos-kptv-default" # test out if to use cosmos-kptv-internal or cosmos-kptv-default
 #      cosmos-stack-main: "" # true or false
@@ -90,7 +90,7 @@ services:
       - "STARTUP_CACHE_DELAY=10"
       - "PROVIDER_TIMEOUT=45"
     hostname: "distrotv"  # change it to provider
-    image: "ghcr.io/kpirnie/kptv-fast:latest"
+    image: "reg.inme.kozow.com/frank/kptv-fast:latest-dev"
     labels:
       cosmos-force-network-mode: "cosmos-kptv-default" # test out if to use cosmos-kptv-internal or cosmos-kptv-default
 #      cosmos-stack-main: "" # true or false
@@ -126,7 +126,7 @@ services:
       - "LG_COUNTRY=us"
       - "PROVIDER_TIMEOUT=45"
     hostname: "lg"  # change it to provider
-    image: "ghcr.io/kpirnie/kptv-fast:latest"
+    image: "reg.inme.kozow.com/frank/kptv-fast:latest-dev"
     labels:
       cosmos-force-network-mode: "cosmos-kptv-default" # test out if to use cosmos-kptv-internal or cosmos-kptv-default
 #      cosmos-stack-main: "" # true or false
@@ -162,7 +162,7 @@ services:
       - "SAMSUNG_REGION=us"
       - "PROVIDER_TIMEOUT=45"
     hostname: "smg"  # change it to provider
-    image: "ghcr.io/kpirnie/kptv-fast:latest"
+    image: "reg.inme.kozow.com/frank/kptv-fast:latest-dev"
     labels:
       cosmos-force-network-mode: "cosmos-kptv-default" # test out if to use cosmos-kptv-internal or cosmos-kptv-default
 #      cosmos-stack-main: "" # true or false
