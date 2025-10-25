@@ -9,7 +9,7 @@ import os
 import time
 from typing import List, Dict, Any, Set
 from .base_provider import BaseProvider
-from utils.m3u_cleaner import clean_m3u_channel_name
+from utils.m3u_cleaner import clean_tvg_name_value
 
 class LGProvider(BaseProvider):
     """Provider for LG channels"""
@@ -173,7 +173,7 @@ class LGProvider(BaseProvider):
                     
                     if ',' in extinf_content:
                         attr_part, name_part = extinf_content.split(',', 1)
-                        channel_name = clean_m3u_channel_name(channel_name)
+                        channel_name = clean_tvg_name_value(channel_name)
                         
                         # Parse attributes
                         tvg_id_match = re.search(r'tvg-id="([^"]*)"', attr_part)
